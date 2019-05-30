@@ -155,23 +155,37 @@ bool mpm::Node<Tdim, Tdof, Tnphases>::update_momentum(
 
 //! Update pressure at the nodes from particle
 template <unsigned Tdim, unsigned Tdof, unsigned Tnphases>
-void mpm::Node<Tdim, Tdof, Tnphases>::update_pressure(bool update,
-                                                      unsigned phase,
-                                                      double mass_pressure) {
+void mpm::Node<Tdim, Tdof, Tnphases>::update_mass_pressure(
+    unsigned phase, double mass_pressure) {
   try {
     const double tolerance = 1.E-16;
 
-    // Decide to update or assign
-    double factor = 1.0;
-    if (!update) factor = 0.;
-
-    // Update/assign pressure
+    // Compute pressure from mass*pressure
     if (mass_(phase) > tolerance) {
       std::lock_guard<std::mutex> guard(node_mutex_);
-      pressure_(phase) =
-          (pressure_(phase) * factor) + mass_pressure / mass_(phase);
+      pressure_(phase) += mass_pressure / mass_(phase);
     } else
-      throw std::runtime_error("Nodal mass is zero or below threshold");
+      //throw std::runtime_error("Nodal mass is zero or below threshold");
+      
+      unsigned temp = 0.;
+
+  } catch (std::exception& exception) {
+    console_->error("{} #{}: {}\n", __FILE__, __LINE__, exception.what());
+  }
+}
+
+//! Update pressure at the nodes from particle
+template <unsigned Tdim, unsigned Tdof, unsigned Tnphases>
+void mpm::Node<Tdim, Tdof, Tnphases>::update_pressure(bool update,
+                                                      unsigned phase,
+                                                      double pressure) {
+  try {
+    const double tolerance = 1.E-16;
+
+    // Compute pressure from mass*pressure
+    std::lock_guard<std::mutex> guard(node_mutex_);
+    pressure_(phase) = pressure;
+
   } catch (std::exception& exception) {
     console_->error("{} #{}: {}\n", __FILE__, __LINE__, exception.what());
   }
@@ -193,7 +207,9 @@ void mpm::Node<Tdim, Tdof, Tnphases>::compute_velocity() {
           if (std::abs(velocity_.col(phase)(i)) < 1.E-15)
             velocity_.col(phase)(i) = 0.;
       } else
-        throw std::runtime_error("Nodal mass is zero or below threshold");
+       // throw std::runtime_error("Nodal mass is zero or below threshold");
+       unsigned temp = 0.;
+
     }
 
     // Apply velocity constraints, which also sets acceleration to 0,
@@ -259,7 +275,9 @@ bool mpm::Node<Tdim, Tdof, Tnphases>::compute_acceleration_velocity(
           acceleration_.col(phase)(i) = 0.;
       }
     } else
-      throw std::runtime_error("Nodal mass is zero or below threshold");
+      // throw std::runtime_error("Nodal mass is zero or below threshold");
+      
+      unsigned temp = 0.;
 
   } catch (std::exception& exception) {
     console_->error("{} #{}: {}\n", __FILE__, __LINE__, exception.what());

@@ -54,35 +54,79 @@ Eigen::Matrix<double, 6, 1> mpm::Bingham<Tdim>::compute_stress(
   // D_1^2 + D_2^2 + 2*D_3^2 + 2*D_4^2 + 2*D_5^2 Yielding is defined: rate of
   // shear > critical_shear_rate_^2 Checking yielding from strain rate vs
   // critical yielding shear rate
-  double shear_rate =
-      std::sqrt(2. * (strain_rate.dot(strain_rate) +
-                      strain_rate.tail(3).dot(strain_rate.tail(3))));
+  double shear_rate = std::sqrt(2. * (strain_rate.dot(strain_rate)));
 
   // Apparent_viscosity maps shear rate to shear stress
   // Check if shear rate is 0
+  // double apparent_viscosity = 0.;// <-- cw: Should this not be the first
+  // viscosity?
   double apparent_viscosity = 0.;
-  if (shear_rate * shear_rate > critical_shear_rate_ * critical_shear_rate_)
+
+  Eigen::Matrix<double, 6, 1> tau;
+
+  if (shear_rate * shear_rate > critical_shear_rate_ * critical_shear_rate_) {
+
     apparent_viscosity = 2. * ((tau0_ / shear_rate) + mu_);
 
-  // Compute shear change to volumetric
-  // tau deviatoric part of cauchy stress tensor
-  Eigen::Matrix<double, 6, 1> tau = apparent_viscosity * strain_rate;
+    tau = apparent_viscosity * strain_rate;
+
+    /*if (yieldcount_ >= 0 && yieldcount_ < 9599) {
+      yieldcount_ += 1;
+    }
+
+    if (staticcount_ > 1 && staticcount_ <= 9600) {
+      staticcount_ -= 1;
+    }*/
+
+  } else {
+
+    apparent_viscosity = 5000.;
+
+    tau = (2 * apparent_viscosity) * strain_rate;
+
+
+    /*if (staticcount_ >= 0 && staticcount_ < 9599) {
+      staticcount_ += 1;
+    }
+
+    if (yieldcount_ > 1 && yieldcount_ <= 9600) {
+      yieldcount_ -= 1;
+    }*/
+  }
+
+  const Eigen::Matrix<double, 6, 1> updated_stress =
+      -ptr->pressure(phase) * this->dirac_delta() + tau;
+
+  // console_->info("yielding: {}, Static: {}", y, s);
+  return updated_stress;
 
   // von Mises criterion
   // trace of second invariant J2 of deviatoric stress in matrix form
   // Since tau is in Voigt notation, only the first three numbers matter
   // yield condition trace of the invariant > tau0^2
-  const double trace_invariant2 = 0.5 * (tau.head(3)).dot(tau.head(3));
-  if (trace_invariant2 < (tau0_ * tau0_)) tau.setZero();
+  // const double trace_invariant2 = 0.5 * (tau.head(3)).dot(tau.head(3));
+  // if (trace_invariant2 < (tau0_ * tau0_)) tau.setZero();
 
   // Update volumetric and deviatoric stress
   // thermodynamic pressure is from material point
   // stress = -thermodynamic_pressure I + tau, where I is identity matrix or
   // direc_delta in Voigt notation
-  const Eigen::Matrix<double, 6, 1> updated_stress =
-      -ptr->pressure(phase) * this->dirac_delta() + tau;
+  /*console_->info(
+      "prev_stress 0: {}, prev_stress 1: {} ,prev_stress 2: "
+      "{},prev_stress 3: {},prev_stress 4:{},prev_stress 5: {}",
+      tau(0), tau(1), tau(2), tau(3), tau(4), tau(5));*/
 
-  return updated_stress;
+  /*  console_->info(
+        "updated_stress 0: {}, updated_stress 1: {} ,updated_stress 2: "
+        "{},updated_stress 3: {},updated_stress 4:{},updated_stress 5: {}",
+        updated_stress(0), updated_stress(1), updated_stress(2),
+        updated_stress(3), updated_stress(4), updated_stress(5));*/
+
+  /*  console_->info(
+        "updated_stress 0: {}, updated_stress 1: {} ,updated_stress 2: "
+        "{},updated_stress 3: {},updated_stress 4:{},updated_stress 5: {}",
+        updated_stress(0), updated_stress(1), updated_stress(2),
+        updated_stress(3), updated_stress(4), updated_stress(5));*/
 }
 
 //! Dirac delta 2D
