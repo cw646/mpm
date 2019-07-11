@@ -268,6 +268,37 @@ class Particle : public ParticleBase<Tdim> {
   //! Apply particle velocity constraints
   void apply_particle_velocity_constraints() override;
 
+  //---------------------------------------------------------------------------
+  //! Assign nodal mass to particles
+  //! \param[in] phase Index corresponding to the phase
+  //! \param[in] mass Mass from the particles in a cell
+  //! \retval status Assignment status
+  void assign_floc(unsigned phase, double floc) override {
+    floc_(phase) = floc;
+  }
+
+  //! Return mass of the particles
+  //! \param[in] phase Index corresponding to the phase
+  double floc(unsigned phase) const override { return floc_(phase); }
+
+  void assign_rest_t(unsigned phase, double rest_t) override {
+    rest_t_(phase) = rest_t;
+  }
+
+  //! Return mass of the particles
+  //! \param[in] phase Index corresponding to the phase
+  double rest_t(unsigned phase) const override { return rest_t_(phase); }
+
+  void assign_alpha(unsigned phase, double alpha) override {
+    alpha_(phase) = alpha;
+  }
+
+  //! Return mass of the particles
+  //! \param[in] phase Index corresponding to the phase
+  double alpha(unsigned phase) const override { return alpha_(phase); }
+
+  //----------------------------------------------------------------------------
+
  private:
   //! particle id
   using ParticleBase<Tdim>::id_;
@@ -321,6 +352,13 @@ class Particle : public ParticleBase<Tdim> {
   std::vector<Eigen::MatrixXd> bmatrix_;
   //! Logger
   std::unique_ptr<spdlog::logger> console_;
+  //! floc
+  Eigen::Matrix<double, 1, Tnphases> floc_;
+
+  Eigen::Matrix<double, 1, Tnphases> rest_t_;
+
+  Eigen::Matrix<double, 1, Tnphases> alpha_;
+
 };  // Particle class
 }  // namespace mpm
 

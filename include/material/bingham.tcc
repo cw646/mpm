@@ -33,7 +33,8 @@ double mpm::Bingham<Tdim>::thermodynamic_pressure(
 template <unsigned Tdim>
 Eigen::Matrix<double, 6, 1> mpm::Bingham<Tdim>::compute_stress(
     const Vector6d& stress, const Vector6d& dstrain,
-    const ParticleBase<Tdim>* ptr, mpm::dense_map* state_vars) {
+    const ParticleBase<Tdim>* ptr, mpm::dense_map* state_vars, Eigdoub& floc,
+    Eigdoub& rest_t, Eigdoub& alpha) {
 
   const unsigned phase = 0;
 
@@ -54,31 +55,69 @@ Eigen::Matrix<double, 6, 1> mpm::Bingham<Tdim>::compute_stress(
   // D_1^2 + D_2^2 + 2*D_3^2 + 2*D_4^2 + 2*D_5^2 Yielding is defined: rate of
   // shear > critical_shear_rate_^2 Checking yielding from strain rate vs
   // critical yielding shear rate
-  double shear_rate =
-      std::sqrt(2. * (strain_rate.dot(strain_rate) +
-                      strain_rate.tail(3).dot(strain_rate.tail(3))));
+  double shear_rate = std::sqrt(2. * (strain_rate.dot(strain_rate)));
 
-  // Apparent_viscosity maps shear rate to shear stress
-  // Check if shear rate is 0
   double apparent_viscosity = 0.;
-  if (shear_rate * shear_rate > critical_shear_rate_ * critical_shear_rate_)
-    apparent_viscosity = 2. * ((tau0_ / shear_rate) + mu_);
 
-  // Compute shear change to volumetric
-  // tau deviatoric part of cauchy stress tensor
-  Eigen::Matrix<double, 6, 1> tau = apparent_viscosity * strain_rate;
+  Eigen::Matrix<double, 6, 1> tau;
 
-  // von Mises criterion
-  // trace of second invariant J2 of deviatoric stress in matrix form
-  // Since tau is in Voigt notation, only the first three numbers matter
-  // yield condition trace of the invariant > tau0^2
-  const double trace_invariant2 = 0.5 * (tau.head(3)).dot(tau.head(3));
-  if (trace_invariant2 < (tau0_ * tau0_)) tau.setZero();
+  double a_thix = 155. / 30.;
 
-  // Update volumetric and deviatoric stress
-  // thermodynamic pressure is from material point
-  // stress = -thermodynamic_pressure I + tau, where I is identity matrix or
-  // direc_delta in Voigt notation
+  double tollerance = 0.00001;
+
+  double dt = 10E-4;
+
+  if (shear_rate * shear_rate > critical_shear_rate_ * critical_shear_rate_) {
+
+    if (floc(phase) > tollerance) {  // is lambda greater than 0
+
+      auto floc_prev = floc(phase);  // assing previous floculation state
+      double dldt = -alpha(phase) * floc(phase) *
+                    shear_rate;             // calculate change in lambda
+      auto floccheck = floc(phase) + dldt;  // check to see if lambda positive
+
+      if (floccheck > tollerance) {      // if lambda > 0
+        floc(phase) = floc_prev + dldt;  // update floculation state
+        alpha(phase) = (log(floc_prev) - log(floc(phase))) /
+                       shear_rate;  // calculate alpha using previous and
+                                    // current floculation state
+        double tau0_temp =
+            (1 + floc(phase)) * tau0_;  // caluclate new apparent yield stress
+        apparent_viscosity = 2. * ((tau0_temp / shear_rate) + mu_);
+
+        // console_->error("Lambda {}, alpha {}, tau0_temp {}, shear_rate{}",
+        //  floc(phase), alpha(phase), tau0_temp, shear_rate);
+
+      } else {
+        floc(phase) = 0.;
+        apparent_viscosity = 2. * ((tau0_ / shear_rate) + mu_);
+      }
+
+    } else {
+
+      apparent_viscosity = 2. * ((tau0_ / shear_rate) + mu_);
+    }
+
+    tau = apparent_viscosity * strain_rate;
+
+    rest_t(phase) = 0.;
+
+  } else {
+
+    apparent_viscosity = 5000.;
+
+    tau = (2 * apparent_viscosity) * strain_rate;
+
+    rest_t(phase) += dt;
+
+    double tau_t = tau0_ + (a_thix * rest_t(phase));
+    floc(phase) = (tau_t / tau0_) - 1;
+
+    //  console_->error("Lambda {}, rest_t {}, tau_t {}, a_thix {}",
+    //  floc(phase),
+    //      rest_t(phase), tau_t, a_thix);
+  }
+
   const Eigen::Matrix<double, 6, 1> updated_stress =
       -ptr->pressure(phase) * this->dirac_delta() + tau;
 

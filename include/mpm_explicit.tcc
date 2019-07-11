@@ -148,9 +148,9 @@ bool mpm::MPMExplicit<Tdim>::solve() {
                     std::placeholders::_1, phase, dt_));
 
       // Iterate over each particle to update particle volume
-      mesh_->iterate_over_particles(
-          std::bind(&mpm::ParticleBase<Tdim>::update_volume_strainrate,
-                    std::placeholders::_1, phase, this->dt_));
+      //    mesh_->iterate_over_particles(
+      //      std::bind(&mpm::ParticleBase<Tdim>::update_volume_strainrate,
+      //              std::placeholders::_1, phase, this->dt_));
 
       // Pressure smoothing
       if (pressure_smoothing_) {
@@ -254,9 +254,9 @@ bool mpm::MPMExplicit<Tdim>::solve() {
                     std::placeholders::_1, phase, dt_));
 
       // Iterate over each particle to update particle volume
-      mesh_->iterate_over_particles(
-          std::bind(&mpm::ParticleBase<Tdim>::update_volume_strainrate,
-                    std::placeholders::_1, phase, this->dt_));
+      //    mesh_->iterate_over_particles(
+      //      std::bind(&mpm::ParticleBase<Tdim>::update_volume_strainrate,
+      //              std::placeholders::_1, phase, this->dt_));
 
       // Pressure smoothing
       if (pressure_smoothing_) {

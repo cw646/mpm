@@ -208,6 +208,27 @@ class ParticleBase {
   //! Apply particle velocity constraints
   virtual void apply_particle_velocity_constraints() = 0;
 
+  //------------------------------------------------------------------------
+  //! Assign floc
+  virtual void assign_floc(unsigned phase, double floc) = 0;
+
+  //! Return floc
+  virtual double floc(unsigned phase) const = 0;
+
+  //! Assign floc
+  virtual void assign_rest_t(unsigned phase, double rest_t) = 0;
+
+  //! Return floc
+  virtual double rest_t(unsigned phase) const = 0;
+
+  //! Assign floc
+  virtual void assign_alpha(unsigned phase, double alpha) = 0;
+
+  //! Return floc
+  virtual double alpha(unsigned phase) const = 0;
+
+  //-------------------------------------------------------------------------
+
  protected:
   //! particleBase id
   Index id_{std::numeric_limits<Index>::max()};

@@ -33,6 +33,8 @@ class Material {
   //! Define a Matrix of 6 x 6
   using Matrix6x6 = Eigen::Matrix<double, 6, 6>;
 
+  using Eigdoub = Eigen::Matrix<double, 1, 1>;
+
   // Constructor with id
   //! \param[in] id Material id
   Material(unsigned id, const Json& material_properties) : id_{id} {
@@ -75,7 +77,8 @@ class Material {
   virtual Vector6d compute_stress(const Vector6d& stress,
                                   const Vector6d& dstrain,
                                   const ParticleBase<Tdim>* ptr,
-                                  mpm::dense_map* state_vars) = 0;
+                                  mpm::dense_map* state_vars, Eigdoub& floc,
+                                  Eigdoub& rest_t, Eigdoub& alpha) = 0;
 
  protected:
   //! material id

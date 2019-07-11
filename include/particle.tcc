@@ -95,6 +95,11 @@ void mpm::Particle<Tdim, Tnphases>::initialise() {
   velocity_.setZero();
   volume_.fill(std::numeric_limits<double>::max());
   volumetric_strain_centroid_.setZero();
+
+  // bingham parameters
+  floc_(0) = 1.1151;
+  rest_t_(0) = 30.;
+  alpha_(0) = 0.005;
 }
 
 // Assign a cell to particle
@@ -453,7 +458,8 @@ bool mpm::Particle<Tdim, Tnphases>::compute_stress(unsigned phase) {
       Eigen::Matrix<double, 6, 1> dstrain = this->dstrain_.col(phase);
       // Calculate stress
       this->stress_.col(phase) = material_.at(phase)->compute_stress(
-          this->stress_.col(phase), dstrain, this, &state_variables_);
+          this->stress_.col(phase), dstrain, this, &state_variables_,
+          this->floc_, this->rest_t_, this->alpha_);
     } else {
       throw std::runtime_error("Material is invalid");
     }
