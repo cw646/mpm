@@ -4,9 +4,11 @@
 
 #include "cell.h"
 #include "element.h"
-#include "hdf5.h"
+#include "function_base.h"
+#include "hdf5_particle.h"
 #include "hexahedron_element.h"
-#include "material/material.h"
+#include "linear_function.h"
+#include "material.h"
 #include "node.h"
 #include "particle.h"
 #include "quadrilateral_element.h"
@@ -17,10 +19,21 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
   const unsigned Dim = 1;
   // Dimension
   const unsigned Dof = 1;
-  // Phases
+  // Number of phases
   const unsigned Nphases = 1;
   // Phase
-  const unsigned Phase = 0;
+  const unsigned phase = 0;
+  // Json property
+  Json jfunctionproperties;
+  jfunctionproperties["id"] = 0;
+  std::vector<double> x_values{{0.0, 0.5, 1.0}};
+  std::vector<double> fx_values{{0.0, 1.0, 1.0}};
+  jfunctionproperties["xvalues"] = x_values;
+  jfunctionproperties["fxvalues"] = fx_values;
+
+  // math function
+  std::shared_ptr<mpm::FunctionBase> mfunction =
+      std::make_shared<mpm::LinearFunction>(0, jfunctionproperties);
 
   // Coordinates
   Eigen::Matrix<double, 1, 1> coords;
@@ -30,7 +43,7 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
   SECTION("Particle id is zero") {
     mpm::Index id = 0;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
     REQUIRE(particle->id() == 0);
     REQUIRE(particle->status() == true);
   }
@@ -39,7 +52,7 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
     //! Check for id is a positive value
     mpm::Index id = std::numeric_limits<mpm::Index>::max();
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
     REQUIRE(particle->id() == std::numeric_limits<mpm::Index>::max());
     REQUIRE(particle->status() == true);
   }
@@ -49,7 +62,7 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
     mpm::Index id = 0;
     bool status = true;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords, status);
+        std::make_shared<mpm::Particle<Dim>>(id, coords, status);
     REQUIRE(particle->id() == 0);
     REQUIRE(particle->status() == true);
     particle->assign_status(false);
@@ -62,7 +75,7 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
     const double Tolerance = 1.E-7;
 
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     // Check for coordinates being zero
     auto coordinates = particle->coordinates();
@@ -97,17 +110,16 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
     const double Tolerance = 1.E-7;
     bool status = true;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords, status);
+        std::make_shared<mpm::Particle<Dim>>(id, coords, status);
     Eigen::Matrix<double, 6, 1> stress =
         Eigen::Matrix<double, 6, 1>::Constant(5.7);
-    const unsigned phase = 0;
-    particle->initial_stress(phase, stress);
-    REQUIRE(particle->stress(phase).size() == stress.size());
-    auto pstress = particle->stress(phase);
+    particle->initial_stress(stress);
+    REQUIRE(particle->stress().size() == stress.size());
+    auto pstress = particle->stress();
     for (unsigned i = 0; i < pstress.size(); ++i)
       REQUIRE(pstress[i] == Approx(stress[i]).epsilon(Tolerance));
 
-    auto pstress_data = particle->vector_data(phase, "stresses");
+    auto pstress_data = particle->tensor_data("stresses");
     for (unsigned i = 0; i < pstress_data.size(); ++i)
       REQUIRE(pstress_data[i] == Approx(stress[i]).epsilon(Tolerance));
   }
@@ -118,38 +130,32 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
     const double Tolerance = 1.E-7;
     bool status = true;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords, status);
-    const unsigned phase = 0;
-    // Apply particles velocity constraints
-    REQUIRE(particle->assign_particle_velocity_constraint(0, 10.5) == true);
-    // Check out of bounds condition
-    REQUIRE(particle->assign_particle_velocity_constraint(1, 0) == false);
-
+        std::make_shared<mpm::Particle<Dim>>(id, coords, status);
     // Apply constraints
-    particle->apply_particle_velocity_constraints();
+    particle->apply_particle_velocity_constraints(0, 10.5);
 
     // Check apply constraints
-    REQUIRE(particle->velocity(Phase)(0) == Approx(10.5).epsilon(Tolerance));
+    REQUIRE(particle->velocity()(0) == Approx(10.5).epsilon(Tolerance));
   }
 
   SECTION("Check particle properties") {
     mpm::Index id = 0;
     const double Tolerance = 1.E-7;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     // Check mass
-    REQUIRE(particle->mass(Phase) == Approx(0.0).epsilon(Tolerance));
+    REQUIRE(particle->mass() == Approx(0.0).epsilon(Tolerance));
     double mass = 100.5;
-    particle->assign_mass(Phase, mass);
-    REQUIRE(particle->mass(Phase) == Approx(100.5).epsilon(Tolerance));
+    particle->assign_mass(mass);
+    REQUIRE(particle->mass() == Approx(100.5).epsilon(Tolerance));
 
     // Check stress
     Eigen::Matrix<double, 6, 1> stress;
     for (unsigned i = 0; i < stress.size(); ++i) stress(i) = 17.51;
 
     for (unsigned i = 0; i < stress.size(); ++i)
-      REQUIRE(particle->stress(Phase)(i) == Approx(0.).epsilon(Tolerance));
+      REQUIRE(particle->stress()(i) == Approx(0.).epsilon(Tolerance));
 
     // Check velocity
     Eigen::VectorXd velocity;
@@ -157,50 +163,44 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
     for (unsigned i = 0; i < velocity.size(); ++i) velocity(i) = 17.51;
 
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) == Approx(0.).epsilon(Tolerance));
+      REQUIRE(particle->velocity()(i) == Approx(0.).epsilon(Tolerance));
 
-    REQUIRE(particle->assign_velocity(Phase, velocity) == true);
+    REQUIRE(particle->assign_velocity(velocity) == true);
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) == Approx(17.51).epsilon(Tolerance));
-
-    // Check for incorrect phase of velocity
-    unsigned bad_phase = 1;
-    REQUIRE(particle->assign_velocity(bad_phase, velocity) == false);
+      REQUIRE(particle->velocity()(i) == Approx(17.51).epsilon(Tolerance));
 
     // Assign volume
-    REQUIRE(particle->assign_volume(Phase, 0.0) == false);
-    REQUIRE(particle->assign_volume(Phase, -5.0) == false);
-    REQUIRE(particle->assign_volume(Phase, 2.0) == true);
+    REQUIRE(particle->assign_volume(0.0) == false);
+    REQUIRE(particle->assign_volume(-5.0) == false);
+    REQUIRE(particle->assign_volume(2.0) == true);
     // Check volume
-    REQUIRE(particle->volume(Phase) == Approx(2.0).epsilon(Tolerance));
+    REQUIRE(particle->volume() == Approx(2.0).epsilon(Tolerance));
     // Traction
     double traction = 65.32;
     const unsigned Direction = 0;
     // Check traction
     for (unsigned i = 0; i < Dim; ++i)
-      REQUIRE(particle->traction(Phase)(i) == Approx(0.).epsilon(Tolerance));
-
-    REQUIRE(particle->assign_traction(Phase, Direction, traction) == true);
+      REQUIRE(particle->traction()(i) == Approx(0.).epsilon(Tolerance));
+    // Try with a null math fuction ptr
+    REQUIRE(particle->assign_traction(Direction, traction) == true);
 
     for (unsigned i = 0; i < Dim; ++i) {
       if (i == Direction)
-        REQUIRE(particle->traction(Phase)(i) ==
-                Approx(traction).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(traction).epsilon(Tolerance));
       else
-        REQUIRE(particle->traction(Phase)(i) == Approx(0.).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(0.).epsilon(Tolerance));
     }
 
-    // Check for incorrect direction / phase
+    // Check for incorrect direction
     const unsigned wrong_dir = 4;
-    REQUIRE(particle->assign_traction(Phase, wrong_dir, traction) == false);
+    REQUIRE(particle->assign_traction(wrong_dir, traction) == false);
 
     // Check again to ensure value hasn't been updated
     for (unsigned i = 0; i < Dim; ++i) {
       if (i == Direction)
-        REQUIRE(particle->traction(Phase)(i) ==
-                Approx(traction).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(traction).epsilon(Tolerance));
       else
-        REQUIRE(particle->traction(Phase)(i) == Approx(0.).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(0.).epsilon(Tolerance));
     }
   }
 
@@ -208,7 +208,7 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
     mpm::Index id = 0;
     const double Tolerance = 1.E-7;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     mpm::HDF5Particle h5_particle;
     h5_particle.id = 13;
@@ -262,13 +262,21 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
 
     h5_particle.cell_id = 1;
 
+    h5_particle.volume = 2.;
+
+    h5_particle.material_id = 1;
+
     // Reinitialise particle from HDF5 data
     REQUIRE(particle->initialise_particle(h5_particle) == true);
 
     // Check particle id
     REQUIRE(particle->id() == h5_particle.id);
     // Check particle mass
-    REQUIRE(particle->mass(Phase) == h5_particle.mass);
+    REQUIRE(particle->mass() == h5_particle.mass);
+    // Check particle volume
+    REQUIRE(particle->volume() == h5_particle.volume);
+    // Check particle mass density
+    REQUIRE(particle->mass_density() == h5_particle.mass / h5_particle.volume);
     // Check particle status
     REQUIRE(particle->status() == h5_particle.status);
 
@@ -279,7 +287,7 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
       REQUIRE(coordinates(i) == Approx(coords(i)).epsilon(Tolerance));
 
     // Check for displacement
-    auto pdisplacement = particle->displacement(Phase);
+    auto pdisplacement = particle->displacement();
     REQUIRE(pdisplacement.size() == Dim);
     for (unsigned i = 0; i < Dim; ++i)
       REQUIRE(pdisplacement(i) == Approx(displacement(i)).epsilon(Tolerance));
@@ -291,32 +299,34 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
       REQUIRE(size(i) == Approx(lsize(i)).epsilon(Tolerance));
 
     // Check velocity
-    auto pvelocity = particle->velocity(Phase);
+    auto pvelocity = particle->velocity();
     REQUIRE(pvelocity.size() == Dim);
     for (unsigned i = 0; i < Dim; ++i)
       REQUIRE(pvelocity(i) == Approx(velocity(i)).epsilon(Tolerance));
 
     // Check stress
-    auto pstress = particle->stress(Phase);
+    auto pstress = particle->stress();
     REQUIRE(pstress.size() == stress.size());
     for (unsigned i = 0; i < stress.size(); ++i)
       REQUIRE(pstress(i) == Approx(stress(i)).epsilon(Tolerance));
 
     // Check strain
-    auto pstrain = particle->strain(Phase);
+    auto pstrain = particle->strain();
     REQUIRE(pstrain.size() == strain.size());
     for (unsigned i = 0; i < strain.size(); ++i)
       REQUIRE(pstrain(i) == Approx(strain(i)).epsilon(Tolerance));
 
     // Check particle volumetric strain centroid
-    REQUIRE(particle->volumetric_strain_centroid(Phase) ==
-            h5_particle.epsilon_v);
+    REQUIRE(particle->volumetric_strain_centroid() == h5_particle.epsilon_v);
 
     // Check cell id
     REQUIRE(particle->cell_id() == h5_particle.cell_id);
 
+    // Check material id
+    REQUIRE(particle->material_id() == h5_particle.material_id);
+
     // Write Particle HDF5 data
-    const auto h5_test = particle->hdf5(Phase);
+    const auto h5_test = particle->hdf5();
 
     REQUIRE(h5_particle.id == h5_test.id);
     REQUIRE(h5_particle.mass == h5_test.mass);
@@ -370,6 +380,7 @@ TEST_CASE("Particle is checked for 1D case", "[particle][1D]") {
             Approx(h5_test.epsilon_v).epsilon(Tolerance));
     REQUIRE(h5_particle.status == h5_test.status);
     REQUIRE(h5_particle.cell_id == h5_test.cell_id);
+    REQUIRE(h5_particle.material_id == h5_test.material_id);
   }
 }
 
@@ -379,14 +390,25 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
   const unsigned Dim = 2;
   // Degree of freedom
   const unsigned Dof = 2;
+  // Number of nodes per cell
+  const unsigned Nnodes = 4;
   // Number of phases
   const unsigned Nphases = 1;
   // Phase
-  const unsigned Phase = 0;
-  // Number of nodes per cell
-  const unsigned Nnodes = 4;
+  const unsigned phase = 0;
   // Tolerance
   const double Tolerance = 1.E-7;
+  // Json property
+  Json jfunctionproperties;
+  jfunctionproperties["id"] = 0;
+  std::vector<double> x_values{{0.0, 0.5, 1.0}};
+  std::vector<double> fx_values{{0.0, 1.0, 1.0}};
+  jfunctionproperties["xvalues"] = x_values;
+  jfunctionproperties["fxvalues"] = fx_values;
+
+  // math function
+  std::shared_ptr<mpm::FunctionBase> mfunction =
+      std::make_shared<mpm::LinearFunction>(0, jfunctionproperties);
   // Coordinates
   Eigen::Vector2d coords;
   coords.setZero();
@@ -394,21 +416,21 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
   //! Check for id = 0
   SECTION("Particle id is zero") {
     mpm::Index id = 0;
-    auto particle = std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+    auto particle = std::make_shared<mpm::Particle<Dim>>(id, coords);
     REQUIRE(particle->id() == 0);
   }
 
   SECTION("Particle id is positive") {
     //! Check for id is a positive value
     mpm::Index id = std::numeric_limits<mpm::Index>::max();
-    auto particle = std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+    auto particle = std::make_shared<mpm::Particle<Dim>>(id, coords);
     REQUIRE(particle->id() == std::numeric_limits<mpm::Index>::max());
   }
 
   //! Test coordinates function
   SECTION("coordinates function is checked") {
     mpm::Index id = 0;
-    auto particle = std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+    auto particle = std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     //! Check for coordinates being zero
     auto coordinates = particle->coordinates();
@@ -442,7 +464,7 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     // Add particle
     mpm::Index id = 0;
     coords << 0.75, 0.75;
-    auto particle = std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+    auto particle = std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     // Check particle coordinates
     auto coordinates = particle->coordinates();
@@ -564,13 +586,12 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     const double Tolerance = 1.E-7;
     bool status = true;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords, status);
+        std::make_shared<mpm::Particle<Dim>>(id, coords, status);
     Eigen::Matrix<double, 6, 1> stress =
         Eigen::Matrix<double, 6, 1>::Constant(5.7);
-    const unsigned phase = 0;
-    particle->initial_stress(phase, stress);
-    REQUIRE(particle->stress(phase).size() == stress.size());
-    auto pstress = particle->stress(phase);
+    particle->initial_stress(stress);
+    REQUIRE(particle->stress().size() == stress.size());
+    auto pstress = particle->stress();
     for (unsigned i = 0; i < pstress.size(); ++i)
       REQUIRE(pstress[i] == Approx(stress[i]).epsilon(Tolerance));
   }
@@ -581,21 +602,15 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     const double Tolerance = 1.E-7;
     bool status = true;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords, status);
-    const unsigned phase = 0;
-
-    // Apply particles velocity constraints
-    REQUIRE(particle->assign_particle_velocity_constraint(0, 10.5) == true);
-    REQUIRE(particle->assign_particle_velocity_constraint(1, -12.5) == true);
-    // Check out of bounds condition
-    REQUIRE(particle->assign_particle_velocity_constraint(2, 0) == false);
+        std::make_shared<mpm::Particle<Dim>>(id, coords, status);
 
     // Apply constraints
-    particle->apply_particle_velocity_constraints();
+    particle->apply_particle_velocity_constraints(0, 10.5);
+    particle->apply_particle_velocity_constraints(1, -12.5);
 
     // Check apply constraints
-    REQUIRE(particle->velocity(Phase)(0) == Approx(10.5).epsilon(Tolerance));
-    REQUIRE(particle->velocity(Phase)(1) == Approx(-12.5).epsilon(Tolerance));
+    REQUIRE(particle->velocity()(0) == Approx(10.5).epsilon(Tolerance));
+    REQUIRE(particle->velocity()(1) == Approx(-12.5).epsilon(Tolerance));
   }
 
   //! Test particle, cell and node functions
@@ -603,10 +618,8 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     // Add particle
     mpm::Index id = 0;
     coords << 0.75, 0.75;
-    auto particle = std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+    auto particle = std::make_shared<mpm::Particle<Dim>>(id, coords);
 
-    // Phase
-    const unsigned phase = 0;
     // Time-step
     const double dt = 0.1;
 
@@ -655,17 +668,18 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     // Add cell to particle
     REQUIRE(cell->status() == false);
     // Check compute shape functions of a particle
-    REQUIRE(particle->compute_shapefn() == false);
+    // TODO Assert: REQUIRE_NOTHROW(particle->compute_shapefn());
     // Compute reference location should throw
     REQUIRE(particle->compute_reference_location() == false);
     // Compute updated particle location should fail
-    REQUIRE(particle->compute_updated_position(phase, dt) == false);
+    // TODO Assert:
+    // REQUIRE_NOTHROW(particle->compute_updated_position(dt) == false);
     // Compute updated particle location from nodal velocity should fail
-    REQUIRE(particle->compute_updated_position_velocity(phase, dt) == false);
-    // Compute volume
-    REQUIRE(particle->compute_volume(phase) == false);
+    // TODO Assert: REQUIRE_NOTHROW(particle->compute_updated_position(dt,
+    // true)); Compute volume
+    // TODO Assert: REQUIRE(particle->compute_volume() == false);
     // Update volume should fail
-    REQUIRE(particle->update_volume_strainrate(phase, dt) == false);
+    // TODO Assert: REQUIRE(particle->update_volume() == false);
 
     REQUIRE(particle->assign_cell(cell) == true);
     REQUIRE(cell->status() == true);
@@ -675,18 +689,18 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     REQUIRE(cell->is_initialised() == true);
 
     // Check compute shape functions of a particle
-    REQUIRE(particle->compute_shapefn() == true);
+    REQUIRE_NOTHROW(particle->compute_shapefn());
 
     // Assign volume
-    REQUIRE(particle->assign_volume(Phase, 0.0) == false);
-    REQUIRE(particle->assign_volume(Phase, -5.0) == false);
-    REQUIRE(particle->assign_volume(Phase, 2.0) == true);
+    REQUIRE(particle->assign_volume(0.0) == false);
+    REQUIRE(particle->assign_volume(-5.0) == false);
+    REQUIRE(particle->assign_volume(2.0) == true);
     // Check volume
-    REQUIRE(particle->volume(Phase) == Approx(2.0).epsilon(Tolerance));
+    REQUIRE(particle->volume() == Approx(2.0).epsilon(Tolerance));
     // Compute volume
-    REQUIRE(particle->compute_volume(Phase) == true);
+    REQUIRE_NOTHROW(particle->compute_volume());
     // Check volume
-    REQUIRE(particle->volume(Phase) == Approx(1.0).epsilon(Tolerance));
+    REQUIRE(particle->volume() == Approx(1.0).epsilon(Tolerance));
 
     // Check reference location
     coords << -0.5, -0.5;
@@ -696,7 +710,7 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
       REQUIRE(ref_coordinates(i) == Approx(coords(i)).epsilon(Tolerance));
 
     // Assign material
-    unsigned mid = 0;
+    unsigned mid = 1;
     // Initialise material
     Json jmaterial;
     jmaterial["density"] = 1000.;
@@ -708,49 +722,49 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
             "LinearElastic2D", std::move(mid), jmaterial);
 
     // Check compute mass before material and volume
-    REQUIRE(particle->compute_mass(phase) == false);
+    // TODO Assert: REQUIRE(particle->compute_mass() == false);
 
     // Test compute stress before material assignment
-    REQUIRE(particle->compute_stress(phase) == false);
-
-    // Test compute internal force before material assignment
-    REQUIRE(particle->map_internal_force(phase) == false);
+    // TODO Assert: REQUIRE(particle->compute_stress() == false);
 
     // Assign material properties
-    REQUIRE(particle->assign_material(phase, material) == true);
+    REQUIRE(particle->assign_material(material) == true);
+
+    // Check material id
+    REQUIRE(particle->material_id() == 1);
 
     // Compute volume
-    REQUIRE(particle->compute_volume(Phase) == true);
+    REQUIRE_NOTHROW(particle->compute_volume());
 
     // Compute mass
-    REQUIRE(particle->compute_mass(phase) == true);
+    REQUIRE_NOTHROW(particle->compute_mass());
     // Mass
-    REQUIRE(particle->mass(phase) == Approx(1000.).epsilon(Tolerance));
+    REQUIRE(particle->mass() == Approx(1000.).epsilon(Tolerance));
 
     // Map particle mass to nodes
-    particle->assign_mass(phase, std::numeric_limits<double>::max());
-    REQUIRE(particle->map_mass_momentum_to_nodes(phase) == false);
+    particle->assign_mass(std::numeric_limits<double>::max());
+    // TODO Assert: REQUIRE_NOTHROW(particle->map_mass_momentum_to_nodes());
 
     // Map particle pressure to nodes
-    REQUIRE(particle->map_pressure_to_nodes(phase) == false);
+    // TODO Assert: REQUIRE(particle->map_pressure_to_nodes() == false);
 
     // Assign mass to nodes
     REQUIRE(particle->compute_reference_location() == true);
-    REQUIRE(particle->compute_shapefn() == true);
+    REQUIRE_NOTHROW(particle->compute_shapefn());
 
     // Check velocity
     Eigen::VectorXd velocity;
     velocity.resize(Dim);
     for (unsigned i = 0; i < velocity.size(); ++i) velocity(i) = i;
-    REQUIRE(particle->assign_velocity(Phase, velocity) == true);
+    REQUIRE(particle->assign_velocity(velocity) == true);
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) == Approx(i).epsilon(Tolerance));
+      REQUIRE(particle->velocity()(i) == Approx(i).epsilon(Tolerance));
 
-    REQUIRE(particle->compute_mass(phase) == true);
-    REQUIRE(particle->map_mass_momentum_to_nodes(phase) == true);
+    REQUIRE_NOTHROW(particle->compute_mass());
+    REQUIRE_NOTHROW(particle->map_mass_momentum_to_nodes());
 
-    REQUIRE(particle->map_pressure_to_nodes(phase) == true);
-    REQUIRE(particle->compute_pressure_smoothing(phase) == true);
+    // TODO Assert: REQUIRE(particle->map_pressure_to_nodes() == false);
+    REQUIRE(particle->compute_pressure_smoothing() == false);
 
     // Values of nodal mass
     std::array<double, 4> nodal_mass{562.5, 187.5, 62.5, 187.5};
@@ -760,7 +774,7 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
               Approx(nodal_mass.at(i)).epsilon(Tolerance));
 
     // Compute nodal velocity
-    for (const auto node : nodes) node->compute_velocity();
+    for (const auto& node : nodes) node->compute_velocity();
 
     // Values of nodal momentum
     Eigen::Matrix<double, 4, 2> nodal_momentum;
@@ -798,7 +812,8 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
                       0., 187.5 * 4.;
     // clang-format on
     for (unsigned i = 0; i < nodes.size(); ++i)
-      nodes.at(i)->update_momentum(false, phase, nodal_momentum.row(i));
+      REQUIRE_NOTHROW(
+          nodes.at(i)->update_momentum(false, phase, nodal_momentum.row(i)));
 
     // nodal velocity
     // clang-format off
@@ -808,7 +823,7 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
                       0., 4.;
     // clang-format on
     // Compute nodal velocity
-    for (const auto node : nodes) node->compute_velocity();
+    for (const auto& node : nodes) node->compute_velocity();
     // Check nodal velocity
     for (unsigned i = 0; i < nodal_velocity.rows(); ++i)
       for (unsigned j = 0; j < nodal_velocity.cols(); ++j)
@@ -816,35 +831,34 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
                 Approx(nodal_velocity(i, j)).epsilon(Tolerance));
 
     // Check pressure
-    REQUIRE(particle->pressure(phase) == Approx(0.).epsilon(Tolerance));
+    REQUIRE(std::isnan(particle->pressure()) == true);
 
     // Compute strain
-    particle->compute_strain(phase, dt);
+    particle->compute_strain(dt);
     // Strain
     Eigen::Matrix<double, 6, 1> strain;
     strain << 0., 0.25, 0., 0.050, 0., 0.;
     // Check strains
     for (unsigned i = 0; i < strain.rows(); ++i)
-      REQUIRE(particle->strain(phase)(i) ==
-              Approx(strain(i)).epsilon(Tolerance));
+      REQUIRE(particle->strain()(i) == Approx(strain(i)).epsilon(Tolerance));
 
     // Check volumetric strain at centroid
-    const double volumetric_strain = 0.2;
-    REQUIRE(particle->volumetric_strain_centroid(phase) ==
+    double volumetric_strain = 0.2;
+    REQUIRE(particle->volumetric_strain_centroid() ==
             Approx(volumetric_strain).epsilon(Tolerance));
 
     // Check updated pressure
     const double K = 8333333.333333333;
-    REQUIRE(particle->pressure(phase) ==
-            Approx(-K * volumetric_strain).epsilon(Tolerance));
+    REQUIRE(std::isnan(particle->pressure()) == true);
 
     // Update volume strain rate
-    REQUIRE(particle->volume(phase) == Approx(1.0).epsilon(Tolerance));
-    REQUIRE(particle->update_volume_strainrate(phase, dt) == true);
-    REQUIRE(particle->volume(phase) == Approx(1.2).epsilon(Tolerance));
+    REQUIRE(particle->volume() == Approx(1.0).epsilon(Tolerance));
+    particle->compute_strain(dt);
+    REQUIRE_NOTHROW(particle->update_volume());
+    REQUIRE(particle->volume() == Approx(1.2).epsilon(Tolerance));
 
     // Compute stress
-    REQUIRE(particle->compute_stress(phase) == true);
+    REQUIRE_NOTHROW(particle->compute_stress());
 
     Eigen::Matrix<double, 6, 1> stress;
     // clang-format off
@@ -857,14 +871,13 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     // clang-format on
     // Check stress
     for (unsigned i = 0; i < stress.rows(); ++i)
-      REQUIRE(particle->stress(phase)(i) ==
-              Approx(stress(i)).epsilon(Tolerance));
+      REQUIRE(particle->stress()(i) == Approx(stress(i)).epsilon(Tolerance));
 
     // Check body force
     Eigen::Matrix<double, 2, 1> gravity;
     gravity << 0., -9.81;
 
-    particle->map_body_force(phase, gravity);
+    particle->map_body_force(gravity);
 
     // Body force
     Eigen::Matrix<double, 4, 2> body_force;
@@ -885,13 +898,15 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     double traction = 7.68;
     const unsigned direction = 1;
     // Assign volume
-    REQUIRE(particle->assign_volume(Phase, 0.0) == false);
-    REQUIRE(particle->assign_volume(Phase, -5.0) == false);
-    REQUIRE(particle->assign_volume(Phase, 2.0) == true);
-    // Assign traction to particle
-    particle->assign_traction(phase, direction, traction);
+    REQUIRE(particle->assign_volume(0.0) == false);
+    REQUIRE(particle->assign_volume(-5.0) == false);
+    REQUIRE(particle->assign_volume(2.0) == true);
     // Map traction force
-    particle->map_traction_force(phase);
+    double current_time = 5.0;
+    // Assign traction to particle
+    particle->assign_traction(direction,
+                              mfunction->value(current_time) * traction);
+    particle->map_traction_force();
 
     // Traction force
     Eigen::Matrix<double, 4, 2> traction_force;
@@ -911,9 +926,10 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
         REQUIRE(nodes[i]->external_force(phase)[j] ==
                 Approx(traction_force(i, j)).epsilon(Tolerance));
     // Reset traction
-    particle->assign_traction(phase, direction, -traction);
+    particle->assign_traction(direction,
+                              -traction * mfunction->value(current_time));
     // Map traction force
-    particle->map_traction_force(phase);
+    particle->map_traction_force();
     // Check nodal external force
     for (unsigned i = 0; i < traction_force.rows(); ++i)
       for (unsigned j = 0; j < traction_force.cols(); ++j)
@@ -930,8 +946,8 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     // clang-format on
 
     // Map particle internal force
-    particle->assign_volume(Phase, 1.0);
-    REQUIRE(particle->map_internal_force(phase) == true);
+    particle->assign_volume(1.0);
+    particle->map_internal_force();
 
     // Check nodal internal force
     for (unsigned i = 0; i < internal_force.rows(); ++i)
@@ -978,18 +994,18 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
       REQUIRE(coordinates(i) == Approx(coords(i)).epsilon(Tolerance));
 
     // Compute updated particle location
-    REQUIRE(particle->compute_updated_position(phase, dt) == true);
+    REQUIRE_NOTHROW(particle->compute_updated_position(dt));
     // Check particle velocity
     velocity << 0., 0.019;
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) ==
+      REQUIRE(particle->velocity()(i) ==
               Approx(velocity(i)).epsilon(Tolerance));
 
     // Check particle displacement
     Eigen::Vector2d displacement;
     displacement << 0., 0.0894;
     for (unsigned i = 0; i < displacement.size(); ++i)
-      REQUIRE(particle->displacement(Phase)(i) ==
+      REQUIRE(particle->displacement()(i) ==
               Approx(displacement(i)).epsilon(Tolerance));
 
     // Updated particle coordinate
@@ -1000,17 +1016,17 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
       REQUIRE(coordinates(i) == Approx(coords(i)).epsilon(Tolerance));
 
     // Compute updated particle location from nodal velocity
-    REQUIRE(particle->compute_updated_position_velocity(phase, dt) == true);
+    REQUIRE_NOTHROW(particle->compute_updated_position(dt, true));
     // Check particle velocity
     velocity << 0., 0.894;
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) ==
+      REQUIRE(particle->velocity()(i) ==
               Approx(velocity(i)).epsilon(Tolerance));
 
     // Check particle displacement
     displacement << 0., 0.1788;
     for (unsigned i = 0; i < displacement.size(); ++i)
-      REQUIRE(particle->displacement(Phase)(i) ==
+      REQUIRE(particle->displacement()(i) ==
               Approx(displacement(i)).epsilon(Tolerance));
 
     // Updated particle coordinate
@@ -1019,15 +1035,164 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     coordinates = particle->coordinates();
     for (unsigned i = 0; i < coordinates.size(); ++i)
       REQUIRE(coordinates(i) == Approx(coords(i)).epsilon(Tolerance));
+
+    SECTION("Particle pressure smoothing") {
+      // Assign material
+      unsigned mid1 = 0;
+      // Initialise material
+      Json jmaterial1;
+      jmaterial1["density"] = 1000.;
+      jmaterial1["bulk_modulus"] = 8333333.333333333;
+      jmaterial1["dynamic_viscosity"] = 8.9E-4;
+
+      auto material1 =
+          Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()
+              ->create("Newtonian2D", std::move(mid1), jmaterial1);
+
+      // Assign material properties
+      REQUIRE(particle->assign_material(material1) == true);
+
+      // Compute volume
+      REQUIRE_NOTHROW(particle->compute_volume());
+
+      // Compute mass
+      REQUIRE_NOTHROW(particle->compute_mass());
+      // Mass
+      REQUIRE(particle->mass() == Approx(1000.).epsilon(Tolerance));
+
+      // Map particle mass to nodes
+      particle->assign_mass(std::numeric_limits<double>::max());
+      // TODO Assert: REQUIRE(particle->map_mass_momentum_to_nodes() == false);
+
+      // Map particle pressure to nodes
+      // TODO Assert: REQUIRE(particle->map_pressure_to_nodes() == false);
+
+      // Assign mass to nodes
+      REQUIRE(particle->compute_reference_location() == true);
+      REQUIRE_NOTHROW(particle->compute_shapefn());
+
+      // Check velocity
+      velocity.resize(Dim);
+      for (unsigned i = 0; i < velocity.size(); ++i) velocity(i) = i;
+      REQUIRE(particle->assign_velocity(velocity) == true);
+      for (unsigned i = 0; i < velocity.size(); ++i)
+        REQUIRE(particle->velocity()(i) == Approx(i).epsilon(Tolerance));
+
+      REQUIRE_NOTHROW(particle->compute_mass());
+      REQUIRE_NOTHROW(particle->map_mass_momentum_to_nodes());
+
+      // Check volumetric strain at centroid
+      volumetric_strain = 0.2;
+      REQUIRE(particle->dvolumetric_strain() ==
+              Approx(volumetric_strain).epsilon(Tolerance));
+
+      // Compute stress
+      REQUIRE_NOTHROW(particle->compute_stress());
+
+      REQUIRE(
+          particle->pressure() ==
+          Approx(-8333333.333333333 * volumetric_strain).epsilon(Tolerance));
+
+      REQUIRE_NOTHROW(particle->map_pressure_to_nodes());
+      REQUIRE(particle->compute_pressure_smoothing() == true);
+    }
+
+    SECTION("Particle assign state variables") {
+      SECTION("Assign state variable fail") {
+        unsigned mid = 0;
+        Json jmaterial;
+        jmaterial["density"] = 1000.;
+        jmaterial["youngs_modulus"] = 1.0E+7;
+        jmaterial["poisson_ratio"] = 0.3;
+        jmaterial["softening"] = false;
+        jmaterial["friction"] = 0.;
+        jmaterial["dilation"] = 0.;
+        jmaterial["cohesion"] = 2000.;
+        jmaterial["residual_friction"] = 0.;
+        jmaterial["residual_dilation"] = 0.;
+        jmaterial["residual_cohesion"] = 1000.;
+        jmaterial["peak_pdstrain"] = 0.;
+        jmaterial["residual_pdstrain"] = 0.;
+        jmaterial["tension_cutoff"] = 0.;
+
+        auto mc_material =
+            Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()
+                ->create("MohrCoulomb2D", std::move(id), jmaterial);
+        REQUIRE(mc_material->id() == 0);
+
+        mpm::dense_map state_variables =
+            mc_material->initialise_state_variables();
+        REQUIRE(state_variables.at("phi") ==
+                Approx(jmaterial["friction"]).epsilon(Tolerance));
+        REQUIRE(state_variables.at("psi") ==
+                Approx(jmaterial["dilation"]).epsilon(Tolerance));
+        REQUIRE(state_variables.at("cohesion") ==
+                Approx(jmaterial["cohesion"]).epsilon(Tolerance));
+        REQUIRE(state_variables.at("j3") == Approx(0.).epsilon(Tolerance));
+        REQUIRE(state_variables.at("epsilon") == Approx(0.).epsilon(Tolerance));
+        REQUIRE(state_variables.at("rho") == Approx(0.).epsilon(Tolerance));
+        REQUIRE(state_variables.at("theta") == Approx(0.).epsilon(Tolerance));
+        REQUIRE(state_variables.at("pdstrain") ==
+                Approx(0.).epsilon(Tolerance));
+
+        SECTION("Assign state variables") {
+          // Assign material properties
+          REQUIRE(particle->assign_material(mc_material) == true);
+          // Assing state variables
+          REQUIRE(particle->assign_material_state_vars(state_variables,
+                                                       mc_material) == true);
+        }
+
+        SECTION("Assign state variables fail on state variables size") {
+          // Assign material
+          unsigned mid1 = 0;
+          // Initialise material
+          Json jmaterial1;
+          jmaterial1["density"] = 1000.;
+          jmaterial1["bulk_modulus"] = 8333333.333333333;
+          jmaterial1["dynamic_viscosity"] = 8.9E-4;
+
+          auto newtonian_material =
+              Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()
+                  ->create("Newtonian2D", std::move(mid1), jmaterial1);
+
+          // Assign material properties
+          REQUIRE(particle->assign_material(newtonian_material) == true);
+          // Assing state variables
+          REQUIRE(particle->assign_material_state_vars(state_variables,
+                                                       mc_material) == false);
+        }
+
+        SECTION("Assign state variables fail on material id") {
+          // Assign material
+          unsigned mid1 = 1;
+          // Initialise material
+          Json jmaterial1;
+          jmaterial1["density"] = 1000.;
+          jmaterial1["bulk_modulus"] = 8333333.333333333;
+          jmaterial1["dynamic_viscosity"] = 8.9E-4;
+
+          auto newtonian_material =
+              Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()
+                  ->create("Newtonian2D", std::move(mid1), jmaterial1);
+
+          // Assign material properties
+          REQUIRE(particle->assign_material(newtonian_material) == true);
+          // Assing state variables
+          REQUIRE(particle->assign_material_state_vars(state_variables,
+                                                       mc_material) == false);
+        }
+      }
+    }
   }
 
   SECTION("Check assign material to particle") {
     // Add particle
     mpm::Index id = 0;
     coords << 0.75, 0.75;
-    auto particle = std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+    auto particle = std::make_shared<mpm::Particle<Dim>>(id, coords);
 
-    unsigned mid = 0;
+    unsigned mid = 1;
     // Initialise material
     Json jmaterial;
     jmaterial["density"] = 1000.;
@@ -1037,33 +1202,39 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     auto material =
         Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()->create(
             "LinearElastic2D", std::move(mid), jmaterial);
-    REQUIRE(material->id() == 0);
+    REQUIRE(material->id() == 1);
 
     // Check if particle can be assigned a material is null
-    REQUIRE(particle->assign_material(Phase, nullptr) == false);
+    REQUIRE(particle->assign_material(nullptr) == false);
+
+    // Check material id
+    REQUIRE(particle->material_id() == std::numeric_limits<unsigned>::max());
 
     // Assign material to particle
-    REQUIRE(particle->assign_material(Phase, material) == true);
+    REQUIRE(particle->assign_material(material) == true);
+
+    // Check material id
+    REQUIRE(particle->material_id() == 1);
   }
 
   SECTION("Check particle properties") {
     mpm::Index id = 0;
     const double Tolerance = 1.E-7;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     // Check mass
-    REQUIRE(particle->mass(Phase) == Approx(0.0).epsilon(Tolerance));
+    REQUIRE(particle->mass() == Approx(0.0).epsilon(Tolerance));
     double mass = 100.5;
-    particle->assign_mass(Phase, mass);
-    REQUIRE(particle->mass(Phase) == Approx(100.5).epsilon(Tolerance));
+    particle->assign_mass(mass);
+    REQUIRE(particle->mass() == Approx(100.5).epsilon(Tolerance));
 
     // Check stress
     Eigen::Matrix<double, 6, 1> stress;
     for (unsigned i = 0; i < stress.size(); ++i) stress(i) = 17.52;
 
     for (unsigned i = 0; i < stress.size(); ++i)
-      REQUIRE(particle->stress(Phase)(i) == Approx(0.).epsilon(Tolerance));
+      REQUIRE(particle->stress()(i) == Approx(0.).epsilon(Tolerance));
 
     // Check velocity
     Eigen::VectorXd velocity;
@@ -1071,54 +1242,47 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     for (unsigned i = 0; i < velocity.size(); ++i) velocity(i) = 19.745;
 
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) == Approx(0.).epsilon(Tolerance));
+      REQUIRE(particle->velocity()(i) == Approx(0.).epsilon(Tolerance));
 
-    REQUIRE(particle->assign_velocity(Phase, velocity) == true);
+    REQUIRE(particle->assign_velocity(velocity) == true);
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) ==
-              Approx(19.745).epsilon(Tolerance));
-
-    // Check for incorrect phase in velocity
-    unsigned bad_phase = 1;
-    REQUIRE(particle->assign_velocity(bad_phase, velocity) == false);
+      REQUIRE(particle->velocity()(i) == Approx(19.745).epsilon(Tolerance));
 
     // Assign volume
-    REQUIRE(particle->assign_volume(Phase, 0.0) == false);
-    REQUIRE(particle->assign_volume(Phase, -5.0) == false);
-    REQUIRE(particle->assign_volume(Phase, 2.0) == true);
+    REQUIRE(particle->assign_volume(0.0) == false);
+    REQUIRE(particle->assign_volume(-5.0) == false);
+    REQUIRE(particle->assign_volume(2.0) == true);
     // Check volume
-    REQUIRE(particle->volume(Phase) == Approx(2.0).epsilon(Tolerance));
+    REQUIRE(particle->volume() == Approx(2.0).epsilon(Tolerance));
     // Traction
     double traction = 65.32;
     const unsigned Direction = 1;
     // Check traction
     for (unsigned i = 0; i < Dim; ++i)
-      REQUIRE(particle->traction(Phase)(i) == Approx(0.).epsilon(Tolerance));
+      REQUIRE(particle->traction()(i) == Approx(0.).epsilon(Tolerance));
 
-    REQUIRE(particle->assign_traction(Phase, Direction, traction) == true);
+    REQUIRE(particle->assign_traction(Direction, traction) == true);
 
     // Calculate traction force = traction * volume / spacing
     traction *= 2.0 / (std::pow(2.0, 1. / Dim));
 
     for (unsigned i = 0; i < Dim; ++i) {
       if (i == Direction)
-        REQUIRE(particle->traction(Phase)(i) ==
-                Approx(traction).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(traction).epsilon(Tolerance));
       else
-        REQUIRE(particle->traction(Phase)(i) == Approx(0.).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(0.).epsilon(Tolerance));
     }
 
-    // Check for incorrect direction / phase
+    // Check for incorrect direction
     const unsigned wrong_dir = 4;
-    REQUIRE(particle->assign_traction(Phase, wrong_dir, traction) == false);
+    REQUIRE(particle->assign_traction(wrong_dir, traction) == false);
 
     // Check again to ensure value hasn't been updated
     for (unsigned i = 0; i < Dim; ++i) {
       if (i == Direction)
-        REQUIRE(particle->traction(Phase)(i) ==
-                Approx(traction).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(traction).epsilon(Tolerance));
       else
-        REQUIRE(particle->traction(Phase)(i) == Approx(0.).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(0.).epsilon(Tolerance));
     }
   }
 
@@ -1127,7 +1291,7 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
     mpm::Index id = 0;
     const double Tolerance = 1.E-7;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     mpm::HDF5Particle h5_particle;
     h5_particle.id = 13;
@@ -1181,13 +1345,21 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
 
     h5_particle.cell_id = 1;
 
+    h5_particle.volume = 2.;
+
+    h5_particle.material_id = 1;
+
     // Reinitialise particle from HDF5 data
     REQUIRE(particle->initialise_particle(h5_particle) == true);
 
     // Check particle id
     REQUIRE(particle->id() == h5_particle.id);
     // Check particle mass
-    REQUIRE(particle->mass(Phase) == h5_particle.mass);
+    REQUIRE(particle->mass() == h5_particle.mass);
+    // Check particle volume
+    REQUIRE(particle->volume() == h5_particle.volume);
+    // Check particle mass density
+    REQUIRE(particle->mass_density() == h5_particle.mass / h5_particle.volume);
     // Check particle status
     REQUIRE(particle->status() == h5_particle.status);
 
@@ -1198,7 +1370,7 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
       REQUIRE(coordinates(i) == Approx(coords(i)).epsilon(Tolerance));
 
     // Check for displacement
-    auto pdisplacement = particle->displacement(Phase);
+    auto pdisplacement = particle->displacement();
     REQUIRE(pdisplacement.size() == Dim);
     for (unsigned i = 0; i < Dim; ++i)
       REQUIRE(pdisplacement(i) == Approx(displacement(i)).epsilon(Tolerance));
@@ -1210,32 +1382,34 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
       REQUIRE(size(i) == Approx(lsize(i)).epsilon(Tolerance));
 
     // Check velocity
-    auto pvelocity = particle->velocity(Phase);
+    auto pvelocity = particle->velocity();
     REQUIRE(pvelocity.size() == Dim);
     for (unsigned i = 0; i < Dim; ++i)
       REQUIRE(pvelocity(i) == Approx(velocity(i)).epsilon(Tolerance));
 
     // Check stress
-    auto pstress = particle->stress(Phase);
+    auto pstress = particle->stress();
     REQUIRE(pstress.size() == stress.size());
     for (unsigned i = 0; i < stress.size(); ++i)
       REQUIRE(pstress(i) == Approx(stress(i)).epsilon(Tolerance));
 
     // Check strain
-    auto pstrain = particle->strain(Phase);
+    auto pstrain = particle->strain();
     REQUIRE(pstrain.size() == strain.size());
     for (unsigned i = 0; i < strain.size(); ++i)
       REQUIRE(pstrain(i) == Approx(strain(i)).epsilon(Tolerance));
 
     // Check particle volumetric strain centroid
-    REQUIRE(particle->volumetric_strain_centroid(Phase) ==
-            h5_particle.epsilon_v);
+    REQUIRE(particle->volumetric_strain_centroid() == h5_particle.epsilon_v);
 
     // Check cell id
     REQUIRE(particle->cell_id() == h5_particle.cell_id);
 
+    // Check material id
+    REQUIRE(particle->material_id() == h5_particle.material_id);
+
     // Write Particle HDF5 data
-    const auto h5_test = particle->hdf5(Phase);
+    const auto h5_test = particle->hdf5();
 
     REQUIRE(h5_particle.id == h5_test.id);
     REQUIRE(h5_particle.mass == h5_test.mass);
@@ -1289,6 +1463,95 @@ TEST_CASE("Particle is checked for 2D case", "[particle][2D]") {
             Approx(h5_test.epsilon_v).epsilon(Tolerance));
     REQUIRE(h5_particle.status == h5_test.status);
     REQUIRE(h5_particle.cell_id == h5_test.cell_id);
+    REQUIRE(h5_particle.material_id == h5_test.material_id);
+  }
+
+  // Check particle's material id maping to nodes
+  SECTION("Check particle's material id maping to nodes") {
+    // Add particle
+    mpm::Index id1 = 0;
+    coords << 0.75, 0.75;
+    auto particle1 = std::make_shared<mpm::Particle<Dim>>(id1, coords);
+
+    // Add particle
+    mpm::Index id2 = 1;
+    coords << 0.25, 0.25;
+    auto particle2 = std::make_shared<mpm::Particle<Dim>>(id2, coords);
+
+    // Element
+    std::shared_ptr<mpm::Element<Dim>> element =
+        std::make_shared<mpm::QuadrilateralElement<Dim, 4>>();
+
+    // Create cell
+    auto cell = std::make_shared<mpm::Cell<Dim>>(10, Nnodes, element);
+    // Create vector of nodes and add them to cell
+    coords << 0., 0.;
+    std::shared_ptr<mpm::NodeBase<Dim>> node0 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(0, coords);
+
+    coords << 1., 0.;
+    std::shared_ptr<mpm::NodeBase<Dim>> node1 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(1, coords);
+
+    coords << 1., 1.;
+    std::shared_ptr<mpm::NodeBase<Dim>> node2 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(3, coords);
+
+    coords << 0., 1.;
+    std::shared_ptr<mpm::NodeBase<Dim>> node3 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(2, coords);
+    std::vector<std::shared_ptr<mpm::NodeBase<Dim>>> nodes = {node0, node1,
+                                                              node2, node3};
+
+    for (int j = 0; j < nodes.size(); ++j) cell->add_node(j, nodes[j]);
+
+    // Initialise cell properties and assign cell to particle
+    cell->initialise();
+    particle1->assign_cell(cell);
+    particle2->assign_cell(cell);
+
+    // Assign material 1
+    unsigned mid1 = 0;
+    // Initialise material 1
+    Json jmaterial1;
+    jmaterial1["density"] = 1000.;
+    jmaterial1["youngs_modulus"] = 1.0E+7;
+    jmaterial1["poisson_ratio"] = 0.3;
+
+    auto material1 =
+        Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()->create(
+            "LinearElastic2D", std::move(mid1), jmaterial1);
+
+    particle1->assign_material(material1);
+
+    // Assign material 2
+    unsigned mid2 = 1;
+    // Initialise material 2
+    Json jmaterial2;
+    jmaterial2["density"] = 2000.;
+    jmaterial2["youngs_modulus"] = 2.0E+7;
+    jmaterial2["poisson_ratio"] = 0.25;
+
+    auto material2 =
+        Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()->create(
+            "LinearElastic2D", std::move(mid2), jmaterial2);
+
+    particle2->assign_material(material2);
+
+    // Append particle's material id to nodes in cell
+    particle1->append_material_id_to_nodes();
+    particle2->append_material_id_to_nodes();
+
+    // check if the correct amount of material ids were added to node and if
+    // their indexes are correct
+    std::vector<unsigned> material_ids = {0, 1};
+    for (const auto& node : nodes) {
+      REQUIRE(node->material_ids().size() == 2);
+      auto mat_ids = node->material_ids();
+      unsigned i = 0;
+      for (auto mitr = mat_ids.begin(); mitr != mat_ids.end(); ++mitr, ++i)
+        REQUIRE(*mitr == material_ids.at(i));
+    }
   }
 }
 
@@ -1298,14 +1561,27 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
   const unsigned Dim = 3;
   // Dimension
   const unsigned Dof = 6;
-  // Nnumber of phases
-  const unsigned Nphases = 1;
-  // Phase
-  const unsigned Phase = 0;
   // Number of nodes per cell
   const unsigned Nnodes = 8;
+  // Number of phases
+  const unsigned Nphases = 1;
+  // Phase
+  const unsigned phase = 0;
   // Tolerance
   const double Tolerance = 1.E-7;
+  // Json property
+  Json jfunctionproperties;
+  jfunctionproperties["id"] = 0;
+  std::vector<double> x_values{{0.0, 0.5, 1.0}};
+  std::vector<double> fx_values{{0.0, 1.0, 1.0}};
+  jfunctionproperties["xvalues"] = x_values;
+  jfunctionproperties["fxvalues"] = fx_values;
+
+  // math function
+  std::shared_ptr<mpm::FunctionBase> mfunction =
+      std::make_shared<mpm::LinearFunction>(0, jfunctionproperties);
+  // Current time for traction force
+  double current_time = 10.0;
 
   // Coordinates
   Eigen::Vector3d coords;
@@ -1315,7 +1591,7 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
   SECTION("Particle id is zero") {
     mpm::Index id = 0;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
     REQUIRE(particle->id() == 0);
     REQUIRE(particle->status() == true);
   }
@@ -1324,7 +1600,7 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     //! Check for id is a positive value
     mpm::Index id = std::numeric_limits<mpm::Index>::max();
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
     REQUIRE(particle->id() == std::numeric_limits<mpm::Index>::max());
     REQUIRE(particle->status() == true);
   }
@@ -1334,7 +1610,7 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     mpm::Index id = 0;
     bool status = true;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords, status);
+        std::make_shared<mpm::Particle<Dim>>(id, coords, status);
     REQUIRE(particle->id() == 0);
     REQUIRE(particle->status() == true);
     particle->assign_status(false);
@@ -1346,7 +1622,7 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     mpm::Index id = 0;
     // Create particle
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     //! Check for coordinates being zero
     auto coordinates = particle->coordinates();
@@ -1381,7 +1657,7 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     mpm::Index id = 0;
     coords << 1.5, 1.5, 1.5;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     // Check particle coordinates
     auto coordinates = particle->coordinates();
@@ -1535,13 +1811,13 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     const double Tolerance = 1.E-7;
     bool status = true;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords, status);
+        std::make_shared<mpm::Particle<Dim>>(id, coords, status);
     Eigen::Matrix<double, 6, 1> stress =
         Eigen::Matrix<double, 6, 1>::Constant(5.7);
-    const unsigned phase = 0;
-    particle->initial_stress(phase, stress);
-    REQUIRE(particle->stress(phase).size() == stress.size());
-    auto pstress = particle->stress(phase);
+
+    particle->initial_stress(stress);
+    REQUIRE(particle->stress().size() == stress.size());
+    auto pstress = particle->stress();
     for (unsigned i = 0; i < pstress.size(); ++i)
       REQUIRE(pstress[i] == Approx(stress[i]).epsilon(Tolerance));
   }
@@ -1552,23 +1828,16 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     const double Tolerance = 1.E-7;
     bool status = true;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords, status);
-    const unsigned phase = 0;
-
-    // Apply particles velocity constraints
-    REQUIRE(particle->assign_particle_velocity_constraint(0, 10.5) == true);
-    REQUIRE(particle->assign_particle_velocity_constraint(1, -12.5) == true);
-    REQUIRE(particle->assign_particle_velocity_constraint(2, 14.5) == true);
-    // Check out of bounds condition
-    REQUIRE(particle->assign_particle_velocity_constraint(3, 0) == false);
-
+        std::make_shared<mpm::Particle<Dim>>(id, coords, status);
     // Apply constraints
-    particle->apply_particle_velocity_constraints();
+    particle->apply_particle_velocity_constraints(0, 10.5);
+    particle->apply_particle_velocity_constraints(1, -12.5);
+    particle->apply_particle_velocity_constraints(2, 14.5);
 
     // Check apply constraints
-    REQUIRE(particle->velocity(Phase)(0) == Approx(10.5).epsilon(Tolerance));
-    REQUIRE(particle->velocity(Phase)(1) == Approx(-12.5).epsilon(Tolerance));
-    REQUIRE(particle->velocity(Phase)(2) == Approx(14.5).epsilon(Tolerance));
+    REQUIRE(particle->velocity()(0) == Approx(10.5).epsilon(Tolerance));
+    REQUIRE(particle->velocity()(1) == Approx(-12.5).epsilon(Tolerance));
+    REQUIRE(particle->velocity()(2) == Approx(14.5).epsilon(Tolerance));
   }
 
   //! Test particle, cell and node functions
@@ -1577,7 +1846,7 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     mpm::Index id = 0;
     coords << 1.5, 1.5, 1.5;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     // Phase
     const unsigned phase = 0;
@@ -1657,17 +1926,19 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     // Add cell to particle
     REQUIRE(cell->status() == false);
     // Check compute shape functions of a particle
-    REQUIRE(particle->compute_shapefn() == false);
+    // TODO Assert: REQUIRE(particle->compute_shapefn() == false);
     // Compute reference location should throw
     REQUIRE(particle->compute_reference_location() == false);
     // Compute updated particle location should fail
-    REQUIRE(particle->compute_updated_position(phase, dt) == false);
+    // TODO Assert: REQUIRE(particle->compute_updated_position(dt) == false);
     // Compute updated particle location from nodal velocity should fail
-    REQUIRE(particle->compute_updated_position_velocity(phase, dt) == false);
+    // TODO Assert: REQUIRE_NOTHROW(particle->compute_updated_position(dt,
+    // true));
+
     // Compute volume
-    REQUIRE(particle->compute_volume(phase) == false);
+    // TODO Assert: REQUIRE(particle->compute_volume() == false);
     // Update volume should fail
-    REQUIRE(particle->update_volume_strainrate(phase, dt) == false);
+    // TODO Assert: REQUIRE(particle->update_volume() == false);
 
     REQUIRE(particle->assign_cell(cell) == true);
     REQUIRE(cell->status() == true);
@@ -1677,18 +1948,18 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     REQUIRE(cell->is_initialised() == true);
 
     // Check compute shape functions of a particle
-    REQUIRE(particle->compute_shapefn() == true);
+    REQUIRE_NOTHROW(particle->compute_shapefn());
 
     // Assign volume
-    REQUIRE(particle->assign_volume(Phase, 0.0) == false);
-    REQUIRE(particle->assign_volume(Phase, -5.0) == false);
-    REQUIRE(particle->assign_volume(Phase, 2.0) == true);
+    REQUIRE(particle->assign_volume(0.0) == false);
+    REQUIRE(particle->assign_volume(-5.0) == false);
+    REQUIRE(particle->assign_volume(2.0) == true);
     // Check volume
-    REQUIRE(particle->volume(Phase) == Approx(2.0).epsilon(Tolerance));
+    REQUIRE(particle->volume() == Approx(2.0).epsilon(Tolerance));
     // Compute volume
-    REQUIRE(particle->compute_volume(Phase) == true);
+    REQUIRE_NOTHROW(particle->compute_volume());
     // Check volume
-    REQUIRE(particle->volume(Phase) == Approx(8.0).epsilon(Tolerance));
+    REQUIRE(particle->volume() == Approx(8.0).epsilon(Tolerance));
 
     // Check reference location
     coords << 0.5, 0.5, 0.5;
@@ -1710,49 +1981,49 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
             "LinearElastic3D", std::move(mid), jmaterial);
 
     // Check compute mass before material and volume
-    REQUIRE(particle->compute_mass(phase) == false);
+    // TODO Assert: REQUIRE(particle->compute_mass() == false);
 
     // Test compute stress before material assignment
-    REQUIRE(particle->compute_stress(phase) == false);
-
-    // Test compute internal force before material assignment
-    REQUIRE(particle->map_internal_force(phase) == false);
+    // TODO Assert: REQUIRE(particle->compute_stress() == false);
 
     // Assign material properties
-    REQUIRE(particle->assign_material(Phase, material) == true);
+    REQUIRE(particle->assign_material(material) == true);
+
+    // Check material id from particle
+    REQUIRE(particle->material_id() == 0);
 
     // Compute volume
-    REQUIRE(particle->compute_volume(phase) == true);
+    REQUIRE_NOTHROW(particle->compute_volume());
 
     // Compute mass
-    REQUIRE(particle->compute_mass(phase) == true);
+    REQUIRE_NOTHROW(particle->compute_mass());
     // Mass
-    REQUIRE(particle->mass(phase) == Approx(8000.).epsilon(Tolerance));
+    REQUIRE(particle->mass() == Approx(8000.).epsilon(Tolerance));
 
     // Map particle mass to nodes
-    particle->assign_mass(phase, std::numeric_limits<double>::max());
-    REQUIRE(particle->map_mass_momentum_to_nodes(phase) == false);
+    particle->assign_mass(std::numeric_limits<double>::max());
+    // TODO Assert: REQUIRE(particle->map_mass_momentum_to_nodes() == false);
 
     // Map particle pressure to nodes
-    REQUIRE(particle->map_pressure_to_nodes(phase) == false);
+    // TODO Assert: REQUIRE(particle->map_pressure_to_nodes() == false);
 
     // Assign mass to nodes
     REQUIRE(particle->compute_reference_location() == true);
-    REQUIRE(particle->compute_shapefn() == true);
+    REQUIRE_NOTHROW(particle->compute_shapefn());
 
     // Check velocity
     Eigen::VectorXd velocity;
     velocity.resize(Dim);
     for (unsigned i = 0; i < velocity.size(); ++i) velocity(i) = i;
-    REQUIRE(particle->assign_velocity(Phase, velocity) == true);
+    REQUIRE(particle->assign_velocity(velocity) == true);
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) == Approx(i).epsilon(Tolerance));
+      REQUIRE(particle->velocity()(i) == Approx(i).epsilon(Tolerance));
 
-    REQUIRE(particle->compute_mass(phase) == true);
-    REQUIRE(particle->map_mass_momentum_to_nodes(phase) == true);
+    REQUIRE_NOTHROW(particle->compute_mass());
+    REQUIRE_NOTHROW(particle->map_mass_momentum_to_nodes());
 
-    REQUIRE(particle->map_pressure_to_nodes(phase) == true);
-    REQUIRE(particle->compute_pressure_smoothing(phase) == true);
+    // TODO Assert: REQUIRE(particle->map_pressure_to_nodes() == false);
+    REQUIRE(particle->compute_pressure_smoothing() == false);
 
     // Values of nodal mass
     std::array<double, 8> nodal_mass{125., 375.,  1125., 375.,
@@ -1763,7 +2034,7 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
               Approx(nodal_mass.at(i)).epsilon(Tolerance));
 
     // Compute nodal velocity
-    for (const auto node : nodes) node->compute_velocity();
+    for (const auto& node : nodes) node->compute_velocity();
 
     // Values of nodal momentum
     Eigen::Matrix<double, 8, 3> nodal_momentum;
@@ -1814,8 +2085,8 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
                       0., 1125. * 8., 2250. * 8.;
     // clang-format on
     for (unsigned i = 0; i < nodes.size(); ++i)
-      REQUIRE(nodes.at(i)->update_momentum(false, phase,
-                                           nodal_momentum.row(i)) == true);
+      REQUIRE_NOTHROW(
+          nodes.at(i)->update_momentum(false, phase, nodal_momentum.row(i)));
 
     // nodal velocity
     // clang-format off
@@ -1829,7 +2100,7 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
                       0., 8., 16.;
     // clang-format on
     // Compute nodal velocity
-    for (const auto node : nodes) node->compute_velocity();
+    for (const auto& node : nodes) node->compute_velocity();
     // Check nodal velocity
     for (unsigned i = 0; i < nodal_velocity.rows(); ++i)
       for (unsigned j = 0; j < nodal_velocity.cols(); ++j)
@@ -1837,36 +2108,34 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
                 Approx(nodal_velocity(i, j)).epsilon(Tolerance));
 
     // Check pressure
-    REQUIRE(particle->pressure(phase) == Approx(0.).epsilon(Tolerance));
+    REQUIRE(std::isnan(particle->pressure()) == true);
 
     // Compute strain
-    particle->compute_strain(phase, dt);
+    particle->compute_strain(dt);
     // Strain
     Eigen::Matrix<double, 6, 1> strain;
     strain << 0.00000, 0.07500, 0.40000, -0.02500, 0.35000, -0.05000;
 
     // Check strains
     for (unsigned i = 0; i < strain.rows(); ++i)
-      REQUIRE(particle->strain(phase)(i) ==
-              Approx(strain(i)).epsilon(Tolerance));
+      REQUIRE(particle->strain()(i) == Approx(strain(i)).epsilon(Tolerance));
 
     // Check volumetric strain at centroid
-    const double volumetric_strain = 0.5;
-    REQUIRE(particle->volumetric_strain_centroid(phase) ==
+    double volumetric_strain = 0.5;
+    REQUIRE(particle->volumetric_strain_centroid() ==
             Approx(volumetric_strain).epsilon(Tolerance));
 
     // Check updated pressure
-    const double K = 8333333.333333333;
-    REQUIRE(particle->pressure(phase) ==
-            Approx(-K * volumetric_strain).epsilon(Tolerance));
+    REQUIRE(std::isnan(particle->pressure()) == true);
 
     // Update volume strain rate
-    REQUIRE(particle->volume(phase) == Approx(8.0).epsilon(Tolerance));
-    REQUIRE(particle->update_volume_strainrate(phase, dt) == true);
-    REQUIRE(particle->volume(phase) == Approx(12.0).epsilon(Tolerance));
+    REQUIRE(particle->volume() == Approx(8.0).epsilon(Tolerance));
+    particle->compute_strain(dt);
+    REQUIRE_NOTHROW(particle->update_volume());
+    REQUIRE(particle->volume() == Approx(12.0).epsilon(Tolerance));
 
     // Compute stress
-    REQUIRE(particle->compute_stress(phase) == true);
+    REQUIRE_NOTHROW(particle->compute_stress());
 
     Eigen::Matrix<double, 6, 1> stress;
     // clang-format off
@@ -1879,14 +2148,13 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     // clang-format on
     // Check stress
     for (unsigned i = 0; i < stress.rows(); ++i)
-      REQUIRE(particle->stress(phase)(i) ==
-              Approx(stress(i)).epsilon(Tolerance));
+      REQUIRE(particle->stress()(i) == Approx(stress(i)).epsilon(Tolerance));
 
     // Check body force
     Eigen::Matrix<double, 3, 1> gravity;
     gravity << 0., 0., -9.81;
 
-    particle->map_body_force(phase, gravity);
+    particle->map_body_force(gravity);
 
     // Body force
     Eigen::Matrix<double, 8, 3> body_force;
@@ -1911,13 +2179,14 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     double traction = 7.68;
     const unsigned direction = 2;
     // Assign volume
-    REQUIRE(particle->assign_volume(Phase, 0.0) == false);
-    REQUIRE(particle->assign_volume(Phase, -5.0) == false);
-    REQUIRE(particle->assign_volume(Phase, 2.0) == true);
+    REQUIRE(particle->assign_volume(0.0) == false);
+    REQUIRE(particle->assign_volume(-5.0) == false);
+    REQUIRE(particle->assign_volume(2.0) == true);
     // Assign traction to particle
-    particle->assign_traction(phase, direction, traction);
+    particle->assign_traction(direction,
+                              mfunction->value(current_time) * traction);
     // Map traction force
-    particle->map_traction_force(phase);
+    particle->map_traction_force();
 
     // Traction force
     Eigen::Matrix<double, 8, 3> traction_force;
@@ -1941,9 +2210,10 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
         REQUIRE(nodes[i]->external_force(phase)[j] ==
                 Approx(traction_force(i, j)).epsilon(Tolerance));
     // Reset traction
-    particle->assign_traction(phase, direction, -traction);
+    particle->assign_traction(direction,
+                              mfunction->value(current_time) * -traction);
     // Map traction force
-    particle->map_traction_force(phase);
+    particle->map_traction_force();
     // Check nodal external force
     for (unsigned i = 0; i < traction_force.rows(); ++i)
       for (unsigned j = 0; j < traction_force.cols(); ++j)
@@ -1964,8 +2234,8 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     // clang-format on
 
     // Map particle internal force
-    particle->assign_volume(Phase, 8.0);
-    REQUIRE(particle->map_internal_force(phase) == true);
+    particle->assign_volume(8.0);
+    particle->map_internal_force();
 
     // Check nodal internal force
     for (unsigned i = 0; i < internal_force.rows(); ++i)
@@ -2019,19 +2289,168 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     for (unsigned i = 0; i < coordinates.size(); ++i)
       REQUIRE(coordinates(i) == Approx(coords(i)).epsilon(Tolerance));
 
+    SECTION("Particle pressure smoothing") {
+      // Assign material
+      unsigned mid1 = 0;
+      // Initialise material
+      Json jmaterial1;
+      jmaterial1["density"] = 1000.;
+      jmaterial1["bulk_modulus"] = 8333333.333333333;
+      jmaterial1["dynamic_viscosity"] = 8.9E-4;
+
+      auto material1 =
+          Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()
+              ->create("Newtonian3D", std::move(mid1), jmaterial1);
+
+      // Assign material properties
+      REQUIRE(particle->assign_material(material1) == true);
+
+      // Compute volume
+      REQUIRE_NOTHROW(particle->compute_volume());
+
+      // Compute mass
+      REQUIRE_NOTHROW(particle->compute_mass());
+      // Mass
+      REQUIRE(particle->mass() == Approx(8000.).epsilon(Tolerance));
+
+      // Map particle mass to nodes
+      particle->assign_mass(std::numeric_limits<double>::max());
+      // TODO Assert: REQUIRE(particle->map_mass_momentum_to_nodes() == false);
+
+      // Map particle pressure to nodes
+      // TODO Assert: REQUIRE(particle->map_pressure_to_nodes() == false);
+
+      // Assign mass to nodes
+      REQUIRE(particle->compute_reference_location() == true);
+      REQUIRE_NOTHROW(particle->compute_shapefn());
+
+      // Check velocity
+      velocity.resize(Dim);
+      for (unsigned i = 0; i < velocity.size(); ++i) velocity(i) = i;
+      REQUIRE(particle->assign_velocity(velocity) == true);
+      for (unsigned i = 0; i < velocity.size(); ++i)
+        REQUIRE(particle->velocity()(i) == Approx(i).epsilon(Tolerance));
+
+      REQUIRE_NOTHROW(particle->compute_mass());
+      REQUIRE_NOTHROW(particle->map_mass_momentum_to_nodes());
+
+      // Check volumetric strain at centroid
+      volumetric_strain = 0.5;
+      REQUIRE(particle->dvolumetric_strain() ==
+              Approx(volumetric_strain).epsilon(Tolerance));
+
+      // Compute stress
+      REQUIRE_NOTHROW(particle->compute_stress());
+
+      REQUIRE(
+          particle->pressure() ==
+          Approx(-8333333.333333333 * volumetric_strain).epsilon(Tolerance));
+
+      REQUIRE_NOTHROW(particle->map_pressure_to_nodes());
+      REQUIRE(particle->compute_pressure_smoothing() == true);
+    }
+
+    SECTION("Particle assign state variables") {
+      SECTION("Assign state variable fail") {
+        unsigned mid = 0;
+        Json jmaterial;
+        jmaterial["density"] = 1000.;
+        jmaterial["youngs_modulus"] = 1.0E+7;
+        jmaterial["poisson_ratio"] = 0.3;
+        jmaterial["softening"] = false;
+        jmaterial["friction"] = 0.;
+        jmaterial["dilation"] = 0.;
+        jmaterial["cohesion"] = 2000.;
+        jmaterial["residual_friction"] = 0.;
+        jmaterial["residual_dilation"] = 0.;
+        jmaterial["residual_cohesion"] = 1000.;
+        jmaterial["peak_pdstrain"] = 0.;
+        jmaterial["residual_pdstrain"] = 0.;
+        jmaterial["tension_cutoff"] = 0.;
+
+        auto mc_material =
+            Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()
+                ->create("MohrCoulomb3D", std::move(id), jmaterial);
+        REQUIRE(mc_material->id() == 0);
+
+        mpm::dense_map state_variables =
+            mc_material->initialise_state_variables();
+        REQUIRE(state_variables.at("phi") ==
+                Approx(jmaterial["friction"]).epsilon(Tolerance));
+        REQUIRE(state_variables.at("psi") ==
+                Approx(jmaterial["dilation"]).epsilon(Tolerance));
+        REQUIRE(state_variables.at("cohesion") ==
+                Approx(jmaterial["cohesion"]).epsilon(Tolerance));
+        REQUIRE(state_variables.at("j3") == Approx(0.).epsilon(Tolerance));
+        REQUIRE(state_variables.at("epsilon") == Approx(0.).epsilon(Tolerance));
+        REQUIRE(state_variables.at("rho") == Approx(0.).epsilon(Tolerance));
+        REQUIRE(state_variables.at("theta") == Approx(0.).epsilon(Tolerance));
+        REQUIRE(state_variables.at("pdstrain") ==
+                Approx(0.).epsilon(Tolerance));
+
+        SECTION("Assign state variables") {
+          // Assign material properties
+          REQUIRE(particle->assign_material(mc_material) == true);
+          // Assing state variables
+          REQUIRE(particle->assign_material_state_vars(state_variables,
+                                                       mc_material) == true);
+        }
+
+        SECTION("Assign state variables fail on state variables size") {
+          // Assign material
+          unsigned mid1 = 0;
+          // Initialise material
+          Json jmaterial1;
+          jmaterial1["density"] = 1000.;
+          jmaterial1["bulk_modulus"] = 8333333.333333333;
+          jmaterial1["dynamic_viscosity"] = 8.9E-4;
+
+          auto newtonian_material =
+              Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()
+                  ->create("Newtonian3D", std::move(mid1), jmaterial1);
+
+          // Assign material properties
+          REQUIRE(particle->assign_material(newtonian_material) == true);
+          // Assing state variables
+          REQUIRE(particle->assign_material_state_vars(state_variables,
+                                                       mc_material) == false);
+        }
+
+        SECTION("Assign state variables fail on material id") {
+          // Assign material
+          unsigned mid1 = 1;
+          // Initialise material
+          Json jmaterial1;
+          jmaterial1["density"] = 1000.;
+          jmaterial1["bulk_modulus"] = 8333333.333333333;
+          jmaterial1["dynamic_viscosity"] = 8.9E-4;
+
+          auto newtonian_material =
+              Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()
+                  ->create("Newtonian3D", std::move(mid1), jmaterial1);
+
+          // Assign material properties
+          REQUIRE(particle->assign_material(newtonian_material) == true);
+          // Assing state variables
+          REQUIRE(particle->assign_material_state_vars(state_variables,
+                                                       mc_material) == false);
+        }
+      }
+    }
+
     // Compute updated particle location
-    REQUIRE(particle->compute_updated_position(phase, dt) == true);
+    REQUIRE_NOTHROW(particle->compute_updated_position(dt));
     // Check particle velocity
     velocity << 0., 1., 1.019;
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) ==
+      REQUIRE(particle->velocity()(i) ==
               Approx(velocity(i)).epsilon(Tolerance));
 
     // Check particle displacement
     Eigen::Vector3d displacement;
     displacement << 0.0, 0.5875, 1.0769;
     for (unsigned i = 0; i < displacement.size(); ++i)
-      REQUIRE(particle->displacement(Phase)(i) ==
+      REQUIRE(particle->displacement()(i) ==
               Approx(displacement(i)).epsilon(Tolerance));
 
     // Updated particle coordinate
@@ -2042,17 +2461,17 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
       REQUIRE(coordinates(i) == Approx(coords(i)).epsilon(Tolerance));
 
     // Compute updated particle location based on nodal velocity
-    REQUIRE(particle->compute_updated_position_velocity(phase, dt) == true);
+    REQUIRE_NOTHROW(particle->compute_updated_position(dt, true));
     // Check particle velocity
     velocity << 0., 5.875, 10.769;
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) ==
+      REQUIRE(particle->velocity()(i) ==
               Approx(velocity(i)).epsilon(Tolerance));
 
     // Check particle displacement
     displacement << 0.0, 1.175, 2.1538;
     for (unsigned i = 0; i < displacement.size(); ++i)
-      REQUIRE(particle->displacement(Phase)(i) ==
+      REQUIRE(particle->displacement()(i) ==
               Approx(displacement(i)).epsilon(Tolerance));
 
     // Updated particle coordinate
@@ -2067,9 +2486,9 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     // Add particle
     mpm::Index id = 0;
     coords << 0.75, 0.75, 0.75;
-    auto particle = std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+    auto particle = std::make_shared<mpm::Particle<Dim>>(id, coords);
 
-    unsigned mid = 0;
+    unsigned mid = 1;
     // Initialise material
     Json jmaterial;
     jmaterial["density"] = 1000.;
@@ -2079,32 +2498,37 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     auto material =
         Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()->create(
             "LinearElastic3D", std::move(mid), jmaterial);
-    REQUIRE(material->id() == 0);
+    REQUIRE(material->id() == 1);
 
     // Check if particle can be assigned a null material
-    REQUIRE(particle->assign_material(Phase, nullptr) == false);
+    REQUIRE(particle->assign_material(nullptr) == false);
+    // Check material id
+    REQUIRE(particle->material_id() == std::numeric_limits<unsigned>::max());
+
     // Assign material to particle
-    REQUIRE(particle->assign_material(Phase, material) == true);
+    REQUIRE(particle->assign_material(material) == true);
+    // Check material id
+    REQUIRE(particle->material_id() == 1);
   }
 
   SECTION("Check particle properties") {
     mpm::Index id = 0;
     const double Tolerance = 1.E-7;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     // Check mass
-    REQUIRE(particle->mass(Phase) == Approx(0.0).epsilon(Tolerance));
+    REQUIRE(particle->mass() == Approx(0.0).epsilon(Tolerance));
     double mass = 100.5;
-    particle->assign_mass(Phase, mass);
-    REQUIRE(particle->mass(Phase) == Approx(100.5).epsilon(Tolerance));
+    particle->assign_mass(mass);
+    REQUIRE(particle->mass() == Approx(100.5).epsilon(Tolerance));
 
     // Check stress
     Eigen::Matrix<double, 6, 1> stress;
     for (unsigned i = 0; i < stress.size(); ++i) stress(i) = 1.;
 
     for (unsigned i = 0; i < stress.size(); ++i)
-      REQUIRE(particle->stress(Phase)(i) == Approx(0.).epsilon(Tolerance));
+      REQUIRE(particle->stress()(i) == Approx(0.).epsilon(Tolerance));
 
     // Check velocity
     Eigen::VectorXd velocity;
@@ -2112,53 +2536,47 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     for (unsigned i = 0; i < velocity.size(); ++i) velocity(i) = 17.51;
 
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) == Approx(0.).epsilon(Tolerance));
+      REQUIRE(particle->velocity()(i) == Approx(0.).epsilon(Tolerance));
 
-    REQUIRE(particle->assign_velocity(Phase, velocity) == true);
+    REQUIRE(particle->assign_velocity(velocity) == true);
     for (unsigned i = 0; i < velocity.size(); ++i)
-      REQUIRE(particle->velocity(Phase)(i) == Approx(17.51).epsilon(Tolerance));
-
-    // Check for exception
-    unsigned bad_phase = 1;
-    REQUIRE(particle->assign_velocity(bad_phase, velocity) == false);
+      REQUIRE(particle->velocity()(i) == Approx(17.51).epsilon(Tolerance));
 
     // Assign volume
-    REQUIRE(particle->assign_volume(Phase, 0.0) == false);
-    REQUIRE(particle->assign_volume(Phase, -5.0) == false);
-    REQUIRE(particle->assign_volume(Phase, 2.0) == true);
+    REQUIRE(particle->assign_volume(0.0) == false);
+    REQUIRE(particle->assign_volume(-5.0) == false);
+    REQUIRE(particle->assign_volume(2.0) == true);
     // Check volume
-    REQUIRE(particle->volume(Phase) == Approx(2.0).epsilon(Tolerance));
+    REQUIRE(particle->volume() == Approx(2.0).epsilon(Tolerance));
     // Traction
     double traction = 65.32;
     const unsigned Direction = 1;
     // Check traction
     for (unsigned i = 0; i < Dim; ++i)
-      REQUIRE(particle->traction(Phase)(i) == Approx(0.).epsilon(Tolerance));
+      REQUIRE(particle->traction()(i) == Approx(0.).epsilon(Tolerance));
 
-    REQUIRE(particle->assign_traction(Phase, Direction, traction) == true);
+    REQUIRE(particle->assign_traction(Direction, traction) == true);
 
     // Calculate traction force = traction * volume / spacing
     traction *= 2.0 / (std::pow(2.0, 1. / Dim));
 
     for (unsigned i = 0; i < Dim; ++i) {
       if (i == Direction)
-        REQUIRE(particle->traction(Phase)(i) ==
-                Approx(traction).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(traction).epsilon(Tolerance));
       else
-        REQUIRE(particle->traction(Phase)(i) == Approx(0.).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(0.).epsilon(Tolerance));
     }
 
-    // Check for incorrect direction / phase
+    // Check for incorrect direction
     const unsigned wrong_dir = 4;
-    REQUIRE(particle->assign_traction(Phase, wrong_dir, traction) == false);
+    REQUIRE(particle->assign_traction(wrong_dir, traction) == false);
 
     // Check again to ensure value hasn't been updated
     for (unsigned i = 0; i < Dim; ++i) {
       if (i == Direction)
-        REQUIRE(particle->traction(Phase)(i) ==
-                Approx(traction).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(traction).epsilon(Tolerance));
       else
-        REQUIRE(particle->traction(Phase)(i) == Approx(0.).epsilon(Tolerance));
+        REQUIRE(particle->traction()(i) == Approx(0.).epsilon(Tolerance));
     }
   }
 
@@ -2167,7 +2585,7 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     mpm::Index id = 0;
     const double Tolerance = 1.E-7;
     std::shared_ptr<mpm::ParticleBase<Dim>> particle =
-        std::make_shared<mpm::Particle<Dim, Nphases>>(id, coords);
+        std::make_shared<mpm::Particle<Dim>>(id, coords);
 
     mpm::HDF5Particle h5_particle;
     h5_particle.id = 13;
@@ -2221,13 +2639,21 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
 
     h5_particle.cell_id = 1;
 
+    h5_particle.volume = 2.;
+
+    h5_particle.material_id = 1;
+
     // Reinitialise particle from HDF5 data
     REQUIRE(particle->initialise_particle(h5_particle) == true);
 
     // Check particle id
     REQUIRE(particle->id() == h5_particle.id);
     // Check particle mass
-    REQUIRE(particle->mass(Phase) == h5_particle.mass);
+    REQUIRE(particle->mass() == h5_particle.mass);
+    // Check particle volume
+    REQUIRE(particle->volume() == h5_particle.volume);
+    // Check particle mass density
+    REQUIRE(particle->mass_density() == h5_particle.mass / h5_particle.volume);
     // Check particle status
     REQUIRE(particle->status() == h5_particle.status);
 
@@ -2239,7 +2665,7 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
     REQUIRE(coordinates.size() == Dim);
 
     // Check for displacement
-    auto pdisplacement = particle->displacement(Phase);
+    auto pdisplacement = particle->displacement();
     REQUIRE(pdisplacement.size() == Dim);
     for (unsigned i = 0; i < Dim; ++i)
       REQUIRE(pdisplacement(i) == Approx(displacement(i)).epsilon(Tolerance));
@@ -2251,32 +2677,34 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
       REQUIRE(size(i) == Approx(lsize(i)).epsilon(Tolerance));
 
     // Check velocity
-    auto pvelocity = particle->velocity(Phase);
+    auto pvelocity = particle->velocity();
     REQUIRE(pvelocity.size() == Dim);
     for (unsigned i = 0; i < Dim; ++i)
       REQUIRE(pvelocity(i) == Approx(velocity(i)).epsilon(Tolerance));
 
     // Check stress
-    auto pstress = particle->stress(Phase);
+    auto pstress = particle->stress();
     REQUIRE(pstress.size() == stress.size());
     for (unsigned i = 0; i < stress.size(); ++i)
       REQUIRE(pstress(i) == Approx(stress(i)).epsilon(Tolerance));
 
     // Check strain
-    auto pstrain = particle->strain(Phase);
+    auto pstrain = particle->strain();
     REQUIRE(pstrain.size() == strain.size());
     for (unsigned i = 0; i < strain.size(); ++i)
       REQUIRE(pstrain(i) == Approx(strain(i)).epsilon(Tolerance));
 
     // Check particle volumetric strain centroid
-    REQUIRE(particle->volumetric_strain_centroid(Phase) ==
-            h5_particle.epsilon_v);
+    REQUIRE(particle->volumetric_strain_centroid() == h5_particle.epsilon_v);
 
     // Check cell id
     REQUIRE(particle->cell_id() == h5_particle.cell_id);
 
+    // Check material id
+    REQUIRE(particle->material_id() == h5_particle.material_id);
+
     // Write Particle HDF5 data
-    const auto h5_test = particle->hdf5(Phase);
+    const auto h5_test = particle->hdf5();
 
     REQUIRE(h5_particle.id == h5_test.id);
     REQUIRE(h5_particle.mass == h5_test.mass);
@@ -2330,5 +2758,110 @@ TEST_CASE("Particle is checked for 3D case", "[particle][3D]") {
             Approx(h5_test.epsilon_v).epsilon(Tolerance));
     REQUIRE(h5_particle.status == h5_test.status);
     REQUIRE(h5_particle.cell_id == h5_test.cell_id);
+    REQUIRE(h5_particle.material_id == h5_test.material_id);
+  }
+
+  // Check particle's material id maping to nodes
+  SECTION("Check particle's material id maping to nodes") {
+    // Add particle
+    mpm::Index id1 = 0;
+    coords << 1.5, 1.5, 1.5;
+    auto particle1 = std::make_shared<mpm::Particle<Dim>>(id1, coords);
+
+    // Add particle
+    mpm::Index id2 = 1;
+    coords << 0.5, 0.5, 0.5;
+    auto particle2 = std::make_shared<mpm::Particle<Dim>>(id2, coords);
+
+    // Element
+    std::shared_ptr<mpm::Element<Dim>> element =
+        std::make_shared<mpm::HexahedronElement<Dim, 8>>();
+
+    // Create cell
+    auto cell = std::make_shared<mpm::Cell<Dim>>(10, Nnodes, element);
+    // Create vector of nodes and add them to cell
+    coords << 0, 0, 0;
+    std::shared_ptr<mpm::NodeBase<Dim>> node0 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(0, coords);
+
+    coords << 2, 0, 0;
+    std::shared_ptr<mpm::NodeBase<Dim>> node1 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(1, coords);
+
+    coords << 2, 2, 0;
+    std::shared_ptr<mpm::NodeBase<Dim>> node2 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(2, coords);
+
+    coords << 0, 2, 0;
+    std::shared_ptr<mpm::NodeBase<Dim>> node3 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(3, coords);
+
+    coords << 0, 0, 2;
+    std::shared_ptr<mpm::NodeBase<Dim>> node4 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(4, coords);
+
+    coords << 2, 0, 2;
+    std::shared_ptr<mpm::NodeBase<Dim>> node5 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(5, coords);
+
+    coords << 2, 2, 2;
+    std::shared_ptr<mpm::NodeBase<Dim>> node6 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(6, coords);
+
+    coords << 0, 2, 2;
+    std::shared_ptr<mpm::NodeBase<Dim>> node7 =
+        std::make_shared<mpm::Node<Dim, Dof, Nphases>>(7, coords);
+    std::vector<std::shared_ptr<mpm::NodeBase<Dim>>> nodes = {
+        node0, node1, node2, node3, node4, node5, node6, node7};
+
+    for (int j = 0; j < nodes.size(); ++j) cell->add_node(j, nodes[j]);
+
+    // Initialise cell properties and assign cell to particle
+    cell->initialise();
+    particle1->assign_cell(cell);
+    particle2->assign_cell(cell);
+
+    // Assign material 1
+    unsigned mid1 = 0;
+    // Initialise material 1
+    Json jmaterial1;
+    jmaterial1["density"] = 1000.;
+    jmaterial1["youngs_modulus"] = 1.0E+7;
+    jmaterial1["poisson_ratio"] = 0.3;
+
+    auto material1 =
+        Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()->create(
+            "LinearElastic3D", std::move(mid1), jmaterial1);
+
+    particle1->assign_material(material1);
+
+    // Assign material 2
+    unsigned mid2 = 1;
+    // Initialise material 2
+    Json jmaterial2;
+    jmaterial2["density"] = 2000.;
+    jmaterial2["youngs_modulus"] = 2.0E+7;
+    jmaterial2["poisson_ratio"] = 0.25;
+
+    auto material2 =
+        Factory<mpm::Material<Dim>, unsigned, const Json&>::instance()->create(
+            "LinearElastic3D", std::move(mid2), jmaterial2);
+
+    particle2->assign_material(material2);
+
+    // Append particle's material id to nodes in cell
+    particle1->append_material_id_to_nodes();
+    particle2->append_material_id_to_nodes();
+
+    // check if the correct amount of material ids were added to node and if
+    // their indexes are correct
+    std::vector<unsigned> material_ids = {0, 1};
+    for (const auto& node : nodes) {
+      REQUIRE(node->material_ids().size() == 2);
+      auto mat_ids = node->material_ids();
+      unsigned i = 0;
+      for (auto mitr = mat_ids.begin(); mitr != mat_ids.end(); ++mitr, ++i)
+        REQUIRE(*mitr == material_ids.at(i));
+    }
   }
 }
