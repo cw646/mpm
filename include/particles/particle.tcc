@@ -713,16 +713,32 @@ void mpm::Particle<Tdim>::compute_updated_position(
           shapefn_[i] * nodes_[i]->acceleration(mpm::ParticlePhase::Solid);
 
     // Update particle velocity from interpolated nodal acceleration
-    this->velocity_ += nodal_acceleration * dt;
+    if (velocity_(2) == 0.2500000001 ){ // if boundary
+      //do nothing
+    }
+    else{
+      this->velocity_ += nodal_acceleration * dt;
+    }
+
+
+
   }
   // Update particle velocity using interpolated nodal velocity
   else
     this->velocity_ = nodal_velocity;
 
+if (velocity_(2) == 0.2500000001 ){ // if boundary
+
+  // New position  current position + velocity * dt
+  this->coordinates_ += velocity_ * dt;
+  // Update displacement (displacement is initialized from zero)
+  this->displacement_ +=velocity_ * dt;
+} else  {
   // New position  current position + velocity * dt
   this->coordinates_ += nodal_velocity * dt;
   // Update displacement (displacement is initialized from zero)
   this->displacement_ += nodal_velocity * dt;
+        }
 }
 
 //! Map particle pressure to nodes
@@ -776,9 +792,9 @@ void mpm::Particle<Tdim>::apply_particle_velocity_constraints(unsigned dir,
   this->velocity_(dir) = velocity;
 }
 
-//! Return particle tensor data
+//! Return particle vector data
 template <unsigned Tdim>
-Eigen::VectorXd mpm::Particle<Tdim>::tensor_data(const std::string& property) {
+Eigen::VectorXd mpm::Particle<Tdim>::vector_data(const std::string& property) {
   return this->properties_.at(property)();
 }
 
