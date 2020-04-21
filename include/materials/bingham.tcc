@@ -37,9 +37,8 @@ mpm::dense_map mpm::Bingham<Tdim>::initialise_state_variables() {
                                {"rest_t", 0.0},
                                {"alpha", 0.0116},
                                {"a_thix", 0.7},
-                               {"dt",1E-4},
+                               {"dt", 0.0001},
 			       {"shear_rate", 0.0},
-			       {"visco", 0.0},
 			       {"strain0", 0.0},
                                {"strain1", 0.0},
                                {"strain2", 0.0},
@@ -93,57 +92,57 @@ Eigen::Matrix<double, 6, 1> mpm::Bingham<Tdim>::compute_stress(
 
   double tollerance = 0.0001;
 
-  (*state_vars)["shear_rate"] = shear_rate;
+  (*state_vars).at("shear_rate") = shear_rate;
 
-(*state_vars)["strain0"] = strain_rate(0);
-(*state_vars)["strain1"] = strain_rate(1);
-(*state_vars)["strain2"] = strain_rate(2);
-(*state_vars)["strain3"] = strain_rate(3);
-(*state_vars)["strain4"] = strain_rate(4);
-(*state_vars)["strain5"] = strain_rate(5);
+(*state_vars).at("strain0") = strain_rate(0);
+(*state_vars).at("strain1") = strain_rate(1);
+(*state_vars).at("strain2") = strain_rate(2);
+(*state_vars).at("strain3") = strain_rate(3);
+(*state_vars).at("strain4") = strain_rate(4);
+(*state_vars).at("strain5") = strain_rate(5);
 
 //console_->info("Strain1 {}  ", (strain_rate(2,2)));
 
   if (shear_rate * shear_rate > critical_shear_rate_ * critical_shear_rate_) {
 
-    if ((*state_vars)["floc"] > tollerance) {  // is lambda greater than 0
+    if ((*state_vars).at("floc") > tollerance) {  // is lambda greater than 0
 
       //console_->info("shear_rate {} ", shear_rate);
 
-      auto floc_prev = (*state_vars)["floc"];  // previous floculation state
+      auto floc_prev = (*state_vars).at("floc");  // previous floculation state
 
-      double dldt = -(*state_vars)["alpha"] * (*state_vars)["floc"] *
+      double dldt = -(*state_vars).at("alpha") * (*state_vars).at("floc") *
                     shear_rate;             // calculate change in lambda
 
-      auto floccheck = (*state_vars)["floc"] + dldt;  // check to see if lambda positive
+      auto floccheck = (*state_vars).at("floc") + dldt;  // check to see if lambda positive
 
       if (floccheck > tollerance) {      // is new lambda > 0
 
-        (*state_vars)["floc"] = floc_prev + dldt;  // update floculation state
+        (*state_vars).at("floc") = floc_prev + dldt;  // update floculation state
 
         // current floculation state
         double tau0_temp =
-            (1 + (*state_vars)["floc"]) * tau0_;  // caluclate new apparent yield stress
+            (1 + (*state_vars).at("floc")) * tau0_;  // caluclate new apparent yield stress
 
 
         apparent_viscosity = 2. * ((tau0_temp / shear_rate) + mu_);
 
 
         // apparent rest time
-        (*state_vars)["rest_t"] = (tau0_temp - tau0_) / (*state_vars)["a_thix"];
+        (*state_vars).at("rest_t") = (tau0_temp - tau0_) / (*state_vars).at("a_thix");
 
       } else {
-        (*state_vars)["floc"] = 0.;
+        (*state_vars).at("floc") = 0.;
 
         apparent_viscosity = 2. * ((tau0_ / shear_rate) + mu_);
 
-        (*state_vars)["rest_t"] = 0;
+        (*state_vars).at("rest_t") = 0;
       }
 
     } else {
 
       apparent_viscosity = 2. * ((tau0_ / shear_rate) + mu_);
-      (*state_vars)["rest_t"] = 0;
+      (*state_vars).at("rest_t") = 0;
 
     }
 
@@ -155,20 +154,17 @@ Eigen::Matrix<double, 6, 1> mpm::Bingham<Tdim>::compute_stress(
     apparent_viscosity = 1000*mu_;
 
     tau = (2 * apparent_viscosity) * strain_rate;
-    (*state_vars)["rest_t"] += (*state_vars)["dt"];
+    (*state_vars).at("rest_t") += (*state_vars).at("dt");
 
     //(*state_vars)["tau0"] = tau_t;
 
-    double tau_t = tau0_ + ((*state_vars)["a_thix"] * (*state_vars)["rest_t"]);
+    double tau_t = tau0_ + ((*state_vars).at("a_thix") * (*state_vars).at("rest_t"));
 
-    (*state_vars)["floc"] = (tau_t / tau0_) - 1;  // update floculation state with
+    (*state_vars).at("floc") = (tau_t / tau0_) - 1;  // update floculation state with
                                         // increase in thixotropic presence
 
-    //console_->info("floc {} ", (*state_vars)["floc"]);
+    //console_->info("floc {} ", (*state_vars).at("floc"));
   }
-
-(*state_vars)["visco"] = apparent_viscosity;
-(*state_vars)["strain"] = strain_rate(5); 
 
   // Update pressure
   (*state_vars).at("pressure") +=
