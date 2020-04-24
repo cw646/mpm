@@ -713,16 +713,30 @@ void mpm::Particle<Tdim>::compute_updated_position(
           shapefn_[i] * nodes_[i]->acceleration(mpm::ParticlePhase::Solid);
 
     // Update particle velocity from interpolated nodal acceleration
-    this->velocity_ += nodal_acceleration * dt;
+    if (this->material_id_ == 1){ // if boundary
+      //do nothing
+    }
+    else{
+      this->velocity_ += nodal_acceleration * dt;
+    }
+
   }
   // Update particle velocity using interpolated nodal velocity
   else
     this->velocity_ = nodal_velocity;
 
+if (this->material_id_ == 1){ // if boundary
+
+  // New position  current position + velocity * dt
+  this->coordinates_ += velocity_ * dt;
+  // Update displacement (displacement is initialized from zero)
+  this->displacement_ +=velocity_ * dt;
+} else  {
   // New position  current position + velocity * dt
   this->coordinates_ += nodal_velocity * dt;
   // Update displacement (displacement is initialized from zero)
   this->displacement_ += nodal_velocity * dt;
+        }
 }
 
 //! Map particle pressure to nodes
